@@ -13,8 +13,8 @@ export default defineConfig({
       registerType: 'autoUpdate',
       includeAssets: ['icon.svg'],
       manifest: {
-        name: 'Organizador Minimalista',
-        short_name: 'Organizador',
+        name: 'Organizador Pessoal',
+        short_name: 'Organizador Pessoal',
         description: 'Um organizador minimalista para sua rotina',
         theme_color: '#FAF9F6',
         background_color: '#FAF9F6',

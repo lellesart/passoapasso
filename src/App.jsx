@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import { auth, googleProvider, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, db, doc, setDoc, getDoc, collection, onSnapshot, updateDoc, deleteDoc, addDoc } from './firebase/config';
+import { auth, googleProvider, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, db, doc, setDoc, getDoc, collection, onSnapshot, updateDoc, deleteDoc, addDoc, query, where, orderBy, serverTimestamp } from './firebase/config';
 import { addEventToGoogleCalendar, updateEventInGoogleCalendar, deleteEventFromGoogleCalendar } from './firebase/calendarAPI';
 import {
   LayoutDashboard,
@@ -13,6 +13,7 @@ import {
   Trash2,
   CheckCircle2,
   Circle,
+  MessageCircle,
   Clock,
   Search,
   Play,
@@ -420,6 +421,7 @@ export default function App() {
     { id: 'habits', label: 'Hábitos' },
     { id: 'notes', label: 'Notas' },
     { id: 'pomodoro', label: 'Foco (Pomodoro)' },
+    { id: 'chat', label: 'Mensagens' },
     { id: 'trash', label: 'Lixeira' }
   ];
 
@@ -621,6 +623,7 @@ export default function App() {
               {activeTab === 'habits' && <HabitsView habits={habits} setHabits={setHabits} syncToFirestore={syncToFirestore} />}
               {activeTab === 'notes' && <NotesView notes={notes} setNotes={setNotes} syncToFirestore={syncToFirestore} />}
               {activeTab === 'pomodoro' && <PomodoroView tasks={tasks} setTasks={setTasks} syncToFirestore={syncToFirestore} />}
+              {activeTab === 'chat' && <ChatView currentUser={user} />}
               {activeTab === 'trash' && (
                 <TrashView 
                   tasks={tasks} setTasks={setTasks}
@@ -1952,6 +1955,137 @@ function TrashView({ tasks, setTasks, habits, setHabits, events, setEvents, note
             </div>
           )}
         </div>
+      )}
+    </div>
+  );
+}
+
+// ==========================================
+// 8. CHAT VIEW
+// ==========================================
+function ChatView({ currentUser }) {
+  const [recipientEmail, setRecipientEmail] = useState('');
+  const [activeChatId, setActiveChatId] = useState(null);
+  const [messages, setMessages] = useState([]);
+  const [newMessage, setNewMessage] = useState('');
+  const messagesEndRef = React.useRef(null);
+
+  const startChat = (e) => {
+    e.preventDefault();
+    if (!recipientEmail.trim() || !currentUser || !currentUser.email) return;
+    
+    // Sort emails to create a consistent unique chat ID regardless of who started it
+    const emails = [currentUser.email.toLowerCase().trim(), recipientEmail.toLowerCase().trim()].sort();
+    const chatId = emails.join('_');
+    setActiveChatId(chatId);
+  };
+
+  useEffect(() => {
+    if (!activeChatId) return;
+
+    const messagesRef = collection(db, 'chats', activeChatId, 'messages');
+    const q = query(messagesRef, orderBy('createdAt', 'asc'));
+
+    const unsubscribe = onSnapshot(q, (snapshot) => {
+      const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
+      setMessages(msgs);
+      setTimeout(() => {
+        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+      }, 100);
+    });
+
+    return () => unsubscribe();
+  }, [activeChatId]);
+
+  const sendMessage = async (e) => {
+    e.preventDefault();
+    if (!newMessage.trim() || !activeChatId) return;
+
+    const messagesRef = collection(db, 'chats', activeChatId, 'messages');
+    try {
+      await addDoc(messagesRef, {
+        text: newMessage,
+        sender: currentUser.email,
+        createdAt: serverTimestamp()
+      });
+      setNewMessage('');
+    } catch (error) {
+      console.error('Erro ao enviar mensagem:', error);
+    }
+  };
+
+  return (
+    <div className="max-w-3xl mx-auto bg-white rounded-xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] h-[600px] flex flex-col overflow-hidden">
+      {!activeChatId ? (
+        <div className="flex-1 flex flex-col items-center justify-center p-8 space-y-6">
+          <div className="w-16 h-16 bg-stone-100 rounded-full flex items-center justify-center">
+            <MessageCircle className="w-8 h-8 text-stone-500" />
+          </div>
+          <div className="text-center space-y-2">
+            <h3 className="text-xl font-bold text-stone-800">Nova Conversa</h3>
+            <p className="text-stone-500 text-sm">Digite o e-mail da pessoa para iniciar uma conversa</p>
+          </div>
+          <form onSubmit={startChat} className="w-full max-w-sm flex space-x-2">
+            <input 
+              type="email" 
+              placeholder="E-mail da pessoa..." 
+              value={recipientEmail}
+              onChange={(e) => setRecipientEmail(e.target.value)}
+              className="flex-1 px-4 py-3 bg-stone-50 border-0 rounded-lg focus:ring-2 focus:ring-stone-200 text-sm focus:outline-none"
+              required
+            />
+            <button type="submit" className="px-6 py-3 bg-stone-900 text-white font-bold rounded-lg hover:bg-stone-800 transition-colors">
+              Iniciar
+            </button>
+          </form>
+        </div>
+      ) : (
+        <>
+          <div className="p-4 border-b border-stone-100 flex items-center justify-between bg-stone-50">
+            <div className="flex items-center space-x-3">
+              <button onClick={() => setActiveChatId(null)} className="p-2 text-stone-400 hover:text-stone-600 hover:bg-stone-200 rounded-lg transition-colors">
+                <RotateCcw className="w-4 h-4" />
+              </button>
+              <div>
+                <p className="text-xs text-stone-400 font-medium uppercase tracking-wider">Conversando com</p>
+                <p className="font-bold text-stone-800">{recipientEmail}</p>
+              </div>
+            </div>
+          </div>
+          
+          <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#FAF9F6]">
+            {messages.length === 0 ? (
+              <div className="h-full flex items-center justify-center text-stone-400 text-sm font-medium">
+                Nenhuma mensagem ainda. Dê um oi! 👋
+              </div>
+            ) : (
+              messages.map(msg => {
+                const isMine = msg.sender === currentUser.email;
+                return (
+                  <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
+                    <div className={`max-w-[70%] px-4 py-2.5 text-sm ${isMine ? 'bg-stone-900 text-white rounded-2xl rounded-tr-sm shadow-md' : 'bg-white text-stone-800 border border-stone-100 rounded-2xl rounded-tl-sm shadow-sm'}`}>
+                      <p>{msg.text}</p>
+                    </div>
+                  </div>
+                );
+              })
+            )}
+            <div ref={messagesEndRef} />
+          </div>
+
+          <form onSubmit={sendMessage} className="p-4 bg-white border-t border-stone-100 flex items-center space-x-2">
+            <input 
+              type="text" 
+              placeholder="Sua mensagem..." 
+              value={newMessage}
+              onChange={(e) => setNewMessage(e.target.value)}
+              className="flex-1 px-4 py-3 bg-stone-50 border-0 rounded-full focus:ring-2 focus:ring-stone-200 text-sm focus:outline-none"
+            />
+            <button type="submit" className="p-3 bg-stone-900 text-white rounded-full hover:bg-stone-800 transition-colors shadow-md" disabled={!newMessage.trim()}>
+              <Plus className="w-5 h-5" />
+            </button>
+          </form>
+        </>
       )}
     </div>
   );

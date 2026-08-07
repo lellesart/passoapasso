@@ -1,4 +1,18 @@
 <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
   <rect width="512" height="512" rx="112" fill="#1c1917" />
-  <path d="M141.6 261.6L221.6 341.6L370.4 170.4" fill="none" stroke="#FAF9F6" stroke-width="48" stroke-linecap="round" stroke-linejoin="round" />
+  
+  <!-- Checkmark 1 -->
+  <path d="M130 180 L160 210 L210 150" fill="none" stroke="#FAF9F6" stroke-width="36" stroke-linecap="round" stroke-linejoin="round" />
+  <!-- Line 1 -->
+  <line x1="260" y1="180" x2="380" y2="180" stroke="#FAF9F6" stroke-width="36" stroke-linecap="round" />
+  
+  <!-- Checkmark 2 -->
+  <path d="M130 270 L160 300 L210 240" fill="none" stroke="#FAF9F6" stroke-width="36" stroke-linecap="round" stroke-linejoin="round" />
+  <!-- Line 2 -->
+  <line x1="260" y1="270" x2="350" y2="270" stroke="#FAF9F6" stroke-width="36" stroke-linecap="round" />
+  
+  <!-- Checkmark 3 (empty circle instead of checkmark to show "todo") -->
+  <circle cx="170" cy="360" r="32" fill="none" stroke="#FAF9F6" stroke-width="32" />
+  <!-- Line 3 -->
+  <line x1="260" y1="360" x2="380" y2="360" stroke="#FAF9F6" stroke-width="36" stroke-linecap="round" />
 </svg>
