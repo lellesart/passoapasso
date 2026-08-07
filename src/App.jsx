@@ -29,7 +29,6 @@ import {
   Heart,
   Briefcase,
   User,
-  MessageCircle,
   Send,
   Smartphone,
   CheckCheck,
