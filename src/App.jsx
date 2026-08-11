@@ -25,6 +25,7 @@ import {
   ChevronRight,
   ChevronLeft,
   ArrowLeft,
+  Brain,
   Tag,
   BookOpen,
   Heart,
