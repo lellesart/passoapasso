@@ -284,7 +284,7 @@ export function LocalAIAssistant({ tasks = [], habits = [], notes = [], user = n
                 <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-900/50 flex items-start gap-2.5 text-amber-800 dark:text-amber-300 text-xs">
                   <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                   <div>
-                    <p className="font-semibold">Ollama não encontrado em localhost:11434</p>
+                    <p className="font-semibold">{ollamaStatus.error || 'Ollama não encontrado em localhost:11434'}</p>
                     <p className="mt-0.5 text-[11px] text-amber-700 dark:text-amber-400">
                       Abra o terminal e execute: <code className="bg-amber-100 dark:bg-amber-900/60 px-1 py-0.5 rounded">ollama serve</code>
                     </p>

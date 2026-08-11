@@ -10,11 +10,16 @@ const DEFAULT_OLLAMA_HOST = 'http://localhost:11434';
  * @returns {Promise<{ online: boolean, models: string[], error?: string }>}
  */
 export async function checkOllamaStatus(host = DEFAULT_OLLAMA_HOST) {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 2500);
+
   try {
     const response = await fetch(`${host}/api/tags`, {
       method: 'GET',
       headers: { 'Content-Type': 'application/json' },
+      signal: controller.signal,
     });
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       return { online: false, models: [], error: `HTTP ${response.status}` };
@@ -28,10 +33,16 @@ export async function checkOllamaStatus(host = DEFAULT_OLLAMA_HOST) {
       models,
     };
   } catch (err) {
+    clearTimeout(timeoutId);
+    const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
+    const isMixedContentError = isHttps && host.startsWith('http://');
+
     return {
       online: false,
       models: [],
-      error: 'Servidor Ollama não encontrado em ' + host,
+      error: isMixedContentError
+        ? 'Acesso via HTTPS (Netlify) bloqueia requisições HTTP para Ollama local (Mixed Content).'
+        : 'Servidor Ollama não encontrado em ' + host,
     };
   }
 }

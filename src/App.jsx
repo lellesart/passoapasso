@@ -24,6 +24,7 @@ import {
   X,
   ChevronRight,
   ChevronLeft,
+  ArrowLeft,
   Tag,
   BookOpen,
   Heart,
@@ -273,8 +274,40 @@ function WeatherWidget() {
 }
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState('dashboard');
+  const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window !== 'undefined') {
+      const hash = window.location.hash.replace('#', '');
+      if (['dashboard', 'calendar', 'google_calendar', 'tasks', 'habits', 'notes', 'pomodoro', 'chat', 'ai_setup', 'trash'].includes(hash)) {
+        return hash;
+      }
+    }
+    return 'dashboard';
+  });
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+
+  const handleTabChange = (tabId, replace = false) => {
+    setActiveTab(tabId);
+    if (typeof window !== 'undefined') {
+      const stateObj = { tab: tabId };
+      if (replace) {
+        window.history.replaceState(stateObj, '', `#${tabId}`);
+      } else {
+        window.history.pushState(stateObj, '', `#${tabId}`);
+      }
+    }
+  };
+
+  useEffect(() => {
+    const handlePopState = (e) => {
+      const tabFromHash = window.location.hash.replace('#', '');
+      const tabFromState = e.state?.tab;
+      const targetTab = tabFromState || tabFromHash || 'dashboard';
+      setActiveTab(targetTab);
+    };
+
+    window.addEventListener('popstate', handlePopState);
+    return () => window.removeEventListener('popstate', handlePopState);
+  }, []);
 
   // Authentication State
   const [user, setUser] = useState(null);
@@ -520,7 +553,7 @@ export default function App() {
                         <li key={item.id}>
                           <button
                             onClick={() => {
-                              setActiveTab(item.id);
+                              handleTabChange(item.id);
                               setMobileMenuOpen(false);
                             }}
                             className={`flex items-center w-full px-3 py-2.5 rounded-md group transition-colors ${
@@ -547,7 +580,7 @@ export default function App() {
               <div className="pt-4 border-t border-stone-200 space-y-3">
                 <button 
                   onClick={() => {
-                    setActiveTab('google_calendar');
+                    handleTabChange('google_calendar');
                     setMobileMenuOpen(false);
                   }}
                   className={`w-full p-2.5 rounded-md text-xs flex items-center justify-between transition-colors shadow-xs ${
@@ -596,7 +629,7 @@ export default function App() {
                   setTasks={setTasks}
                   notes={notes}
                   setNotes={setNotes}
-                  setActiveTab={setActiveTab}
+                  setActiveTab={handleTabChange}
                   dailyHabitsState={dailyHabitsState}
                   toggleDailyHabit={toggleDailyHabit}
                   habits={habits}
@@ -628,6 +661,13 @@ export default function App() {
                             {activeTab === 'ai_setup' && (
                 <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
                   <header className="mb-8">
+                    <button
+                      onClick={() => handleTabChange('dashboard')}
+                      className="inline-flex items-center gap-2 mb-3 text-xs font-semibold text-stone-600 hover:text-stone-900 bg-white hover:bg-stone-100 px-3 py-1.5 rounded-lg border border-stone-200 shadow-xs transition-colors cursor-pointer"
+                    >
+                      <ArrowLeft className="w-4 h-4" />
+                      <span>Voltar ao Painel</span>
+                    </button>
                     <h1 className="text-3xl font-black text-stone-800 tracking-tight mb-2">Assistente IA Local</h1>
                     <p className="text-stone-500">Configure sua inteligência artificial privada e 100% gratuita.</p>
                   </header>
