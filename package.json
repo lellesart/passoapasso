@@ -11,15 +11,12 @@
   },
   "dependencies": {
     "@hello-pangea/dnd": "^18.0.1",
-    "clsx": "^2.1.1",
-    "date-fns": "^4.4.0",
     "firebase": "^12.17.0",
     "framer-motion": "^12.43.0",
     "lucide-react": "^1.28.0",
     "react": "^19.2.8",
     "react-dom": "^19.2.8",
-    "sonner": "^2.0.7",
-    "tailwind-merge": "^3.6.0"
+    "sonner": "^2.0.7"
   },
   "devDependencies": {
     "@tailwindcss/vite": "^4.3.3",

@@ -32,7 +32,7 @@ export async function checkOllamaStatus(host = DEFAULT_OLLAMA_HOST) {
       online: true,
       models,
     };
-  } catch (err) {
+  } catch {
     clearTimeout(timeoutId);
     const isHttps = typeof window !== 'undefined' && window.location.protocol === 'https:';
     const isMixedContentError = isHttps && host.startsWith('http://');
@@ -89,6 +89,9 @@ export async function sendChatMessageStream({
         model: model,
         messages: formattedMessages,
         stream: true,
+        options: {
+          temperature: 0.2,
+        },
       }),
     });
 
@@ -129,7 +132,7 @@ export async function sendChatMessageStream({
               onChunk(chunkContent, fullText);
             }
           }
-        } catch (e) {
+        } catch {
           // Ignore partial line JSON errors
         }
       }
@@ -146,7 +149,7 @@ export async function sendChatMessageStream({
             onChunk(chunkContent, fullText);
           }
         }
-      } catch (e) {
+      } catch {
         // ignore
       }
     }
@@ -161,11 +164,17 @@ export async function sendChatMessageStream({
 }
 
 /**
- * Builds system context prompt summarizing the user's current tasks, habits, and notes.
+ * Builds the system context using only data stored in the organizer.
  */
-export function buildSystemContext({ tasks = [], habits = [], notes = [], user = null }) {
+export function buildSystemContext({ tasks = [], habits = [], notes = [], events = [], user = null }) {
   const userName = user?.displayName || user?.email?.split('@')[0] || 'Usuário';
-  const todayStr = new Date().toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+  const today = new Date();
+  const todayKey = [
+    today.getFullYear(),
+    String(today.getMonth() + 1).padStart(2, '0'),
+    String(today.getDate()).padStart(2, '0'),
+  ].join('-');
+  const todayStr = today.toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
 
   // Format pending tasks
   const pendingTasks = tasks.filter(t => !t.completed && !t.deleted);
@@ -185,8 +194,26 @@ export function buildSystemContext({ tasks = [], habits = [], notes = [], user =
     ? recentNotes.map(n => `- ${n.title || 'Sem título'}: ${n.content ? n.content.substring(0, 80) + '...' : ''}`).join('\n')
     : 'Nenhuma nota recente.';
 
+  // Calendar access is intentionally limited to events saved in the organizer.
+  const organizerEvents = events
+    .filter(event => !event.deleted && event.date)
+    .sort((first, second) => {
+      const firstDateTime = `${first.date}T${first.time || '00:00'}`;
+      const secondDateTime = `${second.date}T${second.time || '00:00'}`;
+      return firstDateTime.localeCompare(secondDateTime);
+    });
+  const eventsSummary = organizerEvents.length > 0
+    ? organizerEvents.map(event => {
+        const parsedDate = new Date(`${event.date}T12:00:00`);
+        const weekday = Number.isNaN(parsedDate.getTime())
+          ? ''
+          : `, ${parsedDate.toLocaleDateString('pt-BR', { weekday: 'long' })}`;
+        return `- ${event.date}${weekday}, ${event.time || 'horário não informado'} — ${event.title || 'Sem título'} [${event.category || 'Sem categoria'}]`;
+      }).join('\n')
+    : 'Nenhum evento cadastrado no calendário do Organizador.';
+
   return `Você é um grande amigo do usuário ${userName}. Vocês se conhecem há muito tempo e você tem acesso fiel a toda a rotina dele através do aplicativo "Organizador Pessoal".
-Data de Hoje: ${todayStr}.
+Data de Hoje: ${todayStr} (${todayKey}).
 
 Sua missão é atuar como um amigo conselheiro e de confiança, que ajuda o ${userName} não apenas a organizar o dia e aliviar a sobrecarga mental, mas também a resolver qualquer tipo de dúvida da vida pessoal ou profissional.
 Você deve responder em português do Brasil, usando um tom pessoal, próximo e direto (como uma conversa real de WhatsApp entre grandes amigos).
@@ -202,7 +229,14 @@ ${habitsSummary}
 NOTAS RECENTES:
 ${notesSummary}
 
+EVENTOS DO CALENDÁRIO DO ORGANIZADOR (${organizerEvents.length}):
+${eventsSummary}
+
 --- INSTRUÇÕES DE COMPORTAMENTO ---
+- Considere como fatos sobre a rotina somente os registros listados neste contexto. Nunca invente, presuma ou complete tarefas, hábitos, notas, datas, horários ou eventos ausentes.
+- Ao responder sobre agenda ou calendário, use exclusivamente a seção "EVENTOS DO CALENDÁRIO DO ORGANIZADOR". Você não possui acesso ao Google Calendar nem a calendários externos.
+- Diferencie claramente um evento já marcado de uma sugestão. Nunca apresente uma recomendação como se fosse um compromisso existente.
+- Se não existir evento para o dia ou período solicitado, responda claramente: "Não encontrei eventos marcados nesse período no calendário do Organizador."
 - Aja estritamente como um amigo de longa data conversando. Vá direto ao ponto, com intimidade e empatia.
 - Não use emojis em hipótese alguma. Mantenha a comunicação madura, limpa e direta.
 - Formate suas respostas de forma simples e fácil de ler. Use bullet points apenas se for estritamente necessário para não poluir o texto. Não crie listas desnecessárias.

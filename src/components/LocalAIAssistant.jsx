@@ -1,25 +1,22 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useCallback, useState, useEffect, useRef } from 'react';
 import { 
-  Bot, 
   Sparkles, 
   Send, 
   X, 
   RefreshCw, 
   AlertCircle, 
-  CheckCircle2, 
   Trash2,
   ChevronDown,
-  Brain,
-  MessageSquare,
-  Zap
+  Brain
 } from 'lucide-react';
+import './LocalAIAssistant.css';
 import { 
   checkOllamaStatus, 
   sendChatMessageStream, 
   buildSystemContext 
 } from '../services/localLLMService';
 
-export function LocalAIAssistant({ tasks = [], habits = [], notes = [], user = null }) {
+export function LocalAIAssistant({ tasks = [], habits = [], notes = [], events = [], user = null }) {
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   
@@ -32,7 +29,7 @@ export function LocalAIAssistant({ tasks = [], habits = [], notes = [], user = n
     {
       id: 'welcome',
       role: 'assistant',
-      content: 'E aí! Estou por aqui para te ajudar a destrinchar o seu dia. Como posso te ajudar agora, seja com as tarefas, ideias ou conselhos?',
+      content: 'E aí, tudo certo? O que você quer organizar hoje? Posso dar uma mão com sua agenda, tarefas ou ideias.',
       timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
     }
   ]);
@@ -44,7 +41,7 @@ export function LocalAIAssistant({ tasks = [], habits = [], notes = [], user = n
   const abortControllerRef = useRef(null);
 
   // Check Ollama status on mount and when opening
-  const verifyOllama = async () => {
+  const verifyOllama = useCallback(async () => {
     setOllamaStatus(prev => ({ ...prev, checking: true }));
     const result = await checkOllamaStatus();
     setOllamaStatus({
@@ -54,16 +51,15 @@ export function LocalAIAssistant({ tasks = [], habits = [], notes = [], user = n
       error: result.error
     });
 
-    if (result.models.length > 0 && !selectedModel) {
-      // Pick first model or preferred llama3.2 / qwen2.5
+    if (result.models.length > 0) {
       const preferred = result.models.find(m => m.includes('llama3') || m.includes('qwen')) || result.models[0];
-      setSelectedModel(preferred);
+      setSelectedModel(currentModel => currentModel || preferred);
     }
-  };
+  }, []);
 
   useEffect(() => {
     verifyOllama();
-  }, []);
+  }, [verifyOllama]);
 
   useEffect(() => {
     if (isOpen) {
@@ -91,8 +87,8 @@ export function LocalAIAssistant({ tasks = [], habits = [], notes = [], user = n
     setIsGenerating(true);
     setActiveStreamingText('');
 
-    // Prepare system context with latest tasks/habits/notes
-    const systemContext = buildSystemContext({ tasks, habits, notes, user });
+    // Prepare system context with the latest data stored in the organizer.
+    const systemContext = buildSystemContext({ tasks, habits, notes, events, user });
     
     // Prepare conversation payload for LLM (last 10 messages max)
     const historyPayload = [...messages, userMsg]
@@ -185,59 +181,57 @@ export function LocalAIAssistant({ tasks = [], habits = [], notes = [], user = n
             setIsMinimized(false);
             verifyOllama();
           }}
-          className="fixed bottom-6 right-6 z-50 flex items-center gap-2.5 px-4 py-3 bg-stone-900 text-white rounded-full shadow-[0_10px_30px_rgba(0,0,0,0.25)] hover:bg-stone-800 transition-all transform hover:scale-105 active:scale-95 group border border-stone-700/50 cursor-pointer"
-          title="Abrir Assistente de IA Local"
+          className="local-ai-toggle"
+          title="Abrir Ajudante do Dia"
         >
-          <div className="relative">
-            <Sparkles className="w-5 h-5 text-amber-400 animate-pulse" />
-            <span className={`absolute -top-1 -right-1 w-2.5 h-2.5 rounded-full ${ollamaStatus.online ? 'bg-emerald-500' : 'bg-amber-500'}`} />
+          <span className="local-ai-toggle-bracket">[</span>
+          <div className="local-ai-toggle-mark">
+            <Sparkles className="w-4 h-4" />
+            <span className={`local-ai-status-dot ${ollamaStatus.online ? 'is-online' : 'is-offline'}`} />
           </div>
-          <span className="font-medium text-sm text-stone-100 pr-1">Assistente IA</span>
+          <span className="local-ai-toggle-label">IA</span>
+          <span className="local-ai-toggle-bracket">]</span>
         </button>
       )}
 
       {/* Main Chat Panel */}
       {isOpen && (
         <div 
-          className={`fixed bottom-6 right-6 z-50 bg-white dark:bg-stone-900 rounded-xl shadow-[0_20px_50px_rgba(0,0,0,0.2)] border border-stone-200/80 dark:border-stone-800 flex flex-col overflow-hidden transition-all duration-300 ${
-            isMinimized 
-              ? 'w-80 h-16' 
-              : 'w-[92vw] sm:w-[420px] h-[580px] max-h-[85vh]'
-          }`}
+          className={`local-ai-panel ${isMinimized ? 'is-minimized' : ''}`}
         >
           {/* Header */}
-          <div className="p-3.5 px-4 bg-stone-900 text-white flex items-center justify-between border-b border-stone-800">
-            <div className="flex items-center gap-2.5">
-              <div className="p-1.5 bg-stone-800 rounded-lg text-amber-400 border border-stone-700">
+          <div className="local-ai-header">
+            <div className="local-ai-brand">
+              <div className="local-ai-mark">
+                <span>[</span>
                 <Brain className="w-4 h-4" />
+                <span>]</span>
               </div>
-              <div>
-                <div className="flex items-center gap-2">
-                  <h3 className="font-semibold text-sm text-white">Ajudante do Dia</h3>
-                </div>
+              <div className="local-ai-brand-copy">
+                <h3>Ajudante do Dia</h3>
 
                 {/* Model Selector / Status subtitle */}
                 {!isMinimized && (
                   ollamaStatus.online && ollamaStatus.models.length > 0 ? (
-                    <div className="flex items-center gap-1.5 text-xs text-stone-400 mt-1">
-                      <span className="text-[11px] font-medium text-stone-400">Modelo:</span>
-                      <div className="relative inline-flex items-center">
+                    <div className="local-ai-model-row">
+                      <span>Modelo</span>
+                      <div className="local-ai-select-wrap">
                         <select
                           value={selectedModel}
                           onChange={(e) => setSelectedModel(e.target.value)}
-                          className="appearance-none bg-stone-800 hover:bg-stone-700 text-stone-200 text-[11px] font-medium pl-2.5 pr-6 py-0.5 rounded-md border border-stone-700 focus:outline-none focus:ring-1 focus:ring-amber-500/50 cursor-pointer transition shadow-xs"
+                          className="local-ai-model-select"
                         >
                           {ollamaStatus.models.map(m => (
-                            <option key={m} value={m} className="bg-stone-900 text-stone-200 py-1">
+                            <option key={m} value={m}>
                               {m}
                             </option>
                           ))}
                         </select>
-                        <ChevronDown className="w-3 h-3 text-stone-400 absolute right-1.5 pointer-events-none" />
+                        <ChevronDown className="w-3 h-3" />
                       </div>
                     </div>
                   ) : (
-                    <p className="text-[11px] text-stone-400 mt-0.5">
+                    <p className="local-ai-status-text">
                       {ollamaStatus.checking ? 'Verificando conexão...' : 'Servidor não detectado'}
                     </p>
                   )
@@ -245,31 +239,31 @@ export function LocalAIAssistant({ tasks = [], habits = [], notes = [], user = n
               </div>
             </div>
 
-            <div className="flex items-center gap-1">
+            <div className="local-ai-controls">
               <button 
                 onClick={verifyOllama}
-                className="p-1.5 text-stone-400 hover:text-white rounded-md hover:bg-stone-800 transition"
+                className="local-ai-icon-button"
                 title="Recarregar conexão Ollama"
               >
                 <RefreshCw className={`w-3.5 h-3.5 ${ollamaStatus.checking ? 'animate-spin' : ''}`} />
               </button>
               <button 
                 onClick={handleClearHistory}
-                className="p-1.5 text-stone-400 hover:text-white rounded-md hover:bg-stone-800 transition"
+                className="local-ai-icon-button"
                 title="Limpar histórico de mensagens"
               >
                 <Trash2 className="w-3.5 h-3.5" />
               </button>
               <button 
                 onClick={() => setIsMinimized(!isMinimized)}
-                className="p-1.5 text-stone-400 hover:text-white rounded-md hover:bg-stone-800 transition"
+                className="local-ai-icon-button"
                 title={isMinimized ? 'Expandir' : 'Minimizar'}
               >
                 <ChevronDown className={`w-4 h-4 transform transition-transform ${isMinimized ? 'rotate-180' : ''}`} />
               </button>
               <button 
                 onClick={() => setIsOpen(false)}
-                className="p-1.5 text-stone-400 hover:text-white rounded-md hover:bg-stone-800 transition"
+                className="local-ai-icon-button"
                 title="Fechar"
               >
                 <X className="w-4 h-4" />
@@ -281,39 +275,33 @@ export function LocalAIAssistant({ tasks = [], habits = [], notes = [], user = n
             <>
               {/* Ollama Offline Banner */}
               {!ollamaStatus.online && !ollamaStatus.checking && (
-                <div className="p-3 bg-amber-50 dark:bg-amber-950/40 border-b border-amber-200 dark:border-amber-900/50 flex items-start gap-2.5 text-amber-800 dark:text-amber-300 text-xs">
-                  <AlertCircle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+                <div className="local-ai-offline">
+                  <AlertCircle className="w-4 h-4" />
                   <div>
-                    <p className="font-semibold">{ollamaStatus.error || 'Ollama não encontrado em localhost:11434'}</p>
-                    <p className="mt-0.5 text-[11px] text-amber-700 dark:text-amber-400">
-                      Abra o terminal e execute: <code className="bg-amber-100 dark:bg-amber-900/60 px-1 py-0.5 rounded">ollama serve</code>
+                    <p>{ollamaStatus.error || 'Ollama não encontrado em localhost:11434'}</p>
+                    <p>
+                      Abra o terminal e execute: <code>ollama serve</code>
                     </p>
                   </div>
                 </div>
               )}
 
               {/* Chat Message List */}
-              <div className="flex-1 p-4 overflow-y-auto space-y-4 bg-stone-50/50 dark:bg-stone-900/50">
+              <div className="local-ai-messages">
                 {messages.map((msg) => (
                   <div 
                     key={msg.id}
-                    className={`flex flex-col ${msg.role === 'user' ? 'items-end' : 'items-start'}`}
+                    className={`local-ai-message-row ${msg.role === 'user' ? 'is-user' : 'is-assistant'}`}
                   >
                     <div 
-                      className={`max-w-[85%] rounded-2xl px-3.5 py-2.5 text-xs sm:text-sm leading-relaxed ${
-                        msg.role === 'user'
-                          ? 'bg-stone-900 text-white rounded-br-xs shadow-sm'
-                          : 'bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700/70 text-stone-800 dark:text-stone-100 rounded-bl-xs shadow-sm'
-                      }`}
+                      className={`local-ai-message ${msg.role === 'user' ? 'is-user' : 'is-assistant'}`}
                     >
                       {/* Render markdown line breaks */}
-                      <div className="whitespace-pre-wrap font-sans">
+                      <div className="local-ai-message-content">
                         {msg.content}
                       </div>
                       <span 
-                        className={`text-[9px] mt-1 block text-right ${
-                          msg.role === 'user' ? 'text-stone-400' : 'text-stone-400 dark:text-stone-500'
-                        }`}
+                        className="local-ai-message-time"
                       >
                         {msg.timestamp}
                       </span>
@@ -323,22 +311,22 @@ export function LocalAIAssistant({ tasks = [], habits = [], notes = [], user = n
 
                 {/* Streaming Assistant Response */}
                 {isGenerating && activeStreamingText && (
-                  <div className="flex flex-col items-start">
-                    <div className="max-w-[85%] rounded-2xl rounded-bl-xs px-3.5 py-2.5 text-xs sm:text-sm bg-white dark:bg-stone-800 border border-stone-200 dark:border-stone-700/70 text-stone-800 dark:text-stone-100 shadow-sm whitespace-pre-wrap font-sans">
+                  <div className="local-ai-message-row is-assistant">
+                    <div className="local-ai-message is-assistant is-streaming">
                       {activeStreamingText}
-                      <span className="inline-block w-1.5 h-3.5 ml-1 bg-amber-500 animate-pulse" />
+                      <span className="local-ai-caret" />
                     </div>
                   </div>
                 )}
 
                 {/* Loading indicator prior to first streamed chunk */}
                 {isGenerating && !activeStreamingText && (
-                  <div className="flex items-center gap-2 text-xs text-stone-500 dark:text-stone-400 p-2">
-                    <Sparkles className="w-3.5 h-3.5 animate-spin text-amber-500" />
+                  <div className="local-ai-thinking">
+                    <Sparkles className="w-3.5 h-3.5 animate-spin" />
                     <span>Pensando com a LLM local...</span>
                     <button 
                       onClick={handleStopGeneration}
-                      className="ml-auto text-[10px] text-red-500 underline hover:text-red-600"
+                      className="local-ai-cancel"
                     >
                       Cancelar
                     </button>
@@ -349,13 +337,13 @@ export function LocalAIAssistant({ tasks = [], habits = [], notes = [], user = n
               </div>
 
               {/* Quick Prompt Chips */}
-              <div className="px-3 py-2 bg-white dark:bg-stone-900 border-t border-stone-100 dark:border-stone-800 flex items-center gap-1.5 overflow-x-auto no-scrollbar">
+              <div className="local-ai-quick-actions">
                 {quickActions.map((action, idx) => (
                   <button
                     key={idx}
                     onClick={() => handleSendMessage(action.prompt)}
                     disabled={isGenerating || !ollamaStatus.online}
-                    className="shrink-0 text-[11px] px-2.5 py-1 bg-stone-100 dark:bg-stone-800 hover:bg-stone-200 dark:hover:bg-stone-700 text-stone-700 dark:text-stone-300 rounded-full transition disabled:opacity-50 cursor-pointer"
+                    className="local-ai-chip"
                   >
                     {action.label}
                   </button>
@@ -368,22 +356,22 @@ export function LocalAIAssistant({ tasks = [], habits = [], notes = [], user = n
                   e.preventDefault();
                   handleSendMessage();
                 }}
-                className="p-3 bg-white dark:bg-stone-900 border-t border-stone-200 dark:border-stone-800 flex items-center gap-2"
+                className="local-ai-compose"
               >
                 <input
                   type="text"
                   value={inputMessage}
                   onChange={(e) => setInputMessage(e.target.value)}
-                  placeholder={ollamaStatus.online ? "Pergunte ao assistente..." : "Inicie o Ollama para conversar..."}
+                  placeholder={ollamaStatus.online ? "Pergunte ao Ajudante do Dia..." : "Inicie o Ollama para conversar..."}
                   disabled={isGenerating || !ollamaStatus.online}
-                  className="flex-1 text-xs sm:text-sm px-3.5 py-2.5 bg-stone-100 dark:bg-stone-800 border border-stone-200 dark:border-stone-700 rounded-xl focus:outline-none focus:ring-2 focus:ring-stone-400 text-stone-800 dark:text-stone-100 placeholder-stone-400 disabled:opacity-60"
+                  className="local-ai-input"
                 />
 
                 {isGenerating ? (
                   <button
                     type="button"
                     onClick={handleStopGeneration}
-                    className="p-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl transition"
+                    className="local-ai-send-button is-stop"
                     title="Parar geração"
                   >
                     <X className="w-4 h-4" />
@@ -392,7 +380,7 @@ export function LocalAIAssistant({ tasks = [], habits = [], notes = [], user = n
                   <button
                     type="submit"
                     disabled={!inputMessage.trim() || !ollamaStatus.online}
-                    className="p-2.5 bg-stone-900 hover:bg-stone-800 dark:bg-stone-100 dark:hover:bg-stone-200 text-white dark:text-stone-900 rounded-xl transition disabled:opacity-40 disabled:cursor-not-allowed"
+                    className="local-ai-send-button"
                     title="Enviar mensagem"
                   >
                     <Send className="w-4 h-4" />

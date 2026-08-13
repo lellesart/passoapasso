@@ -1,44 +1,23 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { lazy, Suspense, useState, useEffect, useMemo } from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import { auth, googleProvider, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, db, doc, setDoc, getDoc, collection, onSnapshot, updateDoc, deleteDoc, addDoc, query, where, orderBy, serverTimestamp } from './firebase/config';
-import { addEventToGoogleCalendar, updateEventInGoogleCalendar, deleteEventFromGoogleCalendar } from './firebase/calendarAPI';
+import { auth, googleProvider, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, db, doc, setDoc, onSnapshot, updateDoc } from './firebase/config';
+import { addEventToGoogleCalendar, deleteEventFromGoogleCalendar } from './firebase/calendarAPI';
 import {
-  LayoutDashboard,
   CheckSquare,
   Flame,
   Calendar as CalendarIcon,
-  Notebook,
-  Timer,
   Plus,
   Trash2,
   CheckCircle2,
   Circle,
-  MessageCircle,
-  Clock,
-  Search,
-  Play,
-  Pause,
   RotateCcw,
-  Sparkles,
   Menu,
   X,
   ChevronRight,
   ChevronLeft,
-  ArrowLeft,
-  Brain,
-  Tag,
-  BookOpen,
-  Heart,
-  Briefcase,
-  User,
-  Send,
-  Smartphone,
-  CheckCheck,
   ShieldCheck,
   Check,
   AlertCircle,
-  Settings,
-  BellRing,
   Bell,
   Save,
   FileText,
@@ -60,21 +39,12 @@ import {
 
 import { motion, AnimatePresence } from 'framer-motion';
 import { Toaster, toast } from 'sonner';
-import { clsx } from 'clsx';
-import { twMerge } from 'tailwind-merge';
-import { LocalAIAssistant } from './components/LocalAIAssistant';
 
-export function cn(...inputs) {
-  return twMerge(clsx(inputs));
-}
-
-// Tipografia editorial: serif para títulos e sans para a interface.
-if (typeof document !== 'undefined') {
-  const link = document.createElement('link');
-  link.href = 'https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600;6..72,700&display=swap';
-  link.rel = 'stylesheet';
-  document.head.appendChild(link);
-}
+const loadSecondaryViews = () => import('./components/SecondaryViews');
+const GoogleCalendarSyncView = lazy(() => loadSecondaryViews().then(module => ({ default: module.GoogleCalendarSyncView })));
+const AISetupView = lazy(() => loadSecondaryViews().then(module => ({ default: module.AISetupView })));
+const ChatView = lazy(() => loadSecondaryViews().then(module => ({ default: module.ChatView })));
+const LocalAIAssistant = lazy(() => import('./components/LocalAIAssistant').then(module => ({ default: module.LocalAIAssistant })));
 
 // Mapas de Cores Pastéis Sólidas por Categoria (Sem bordas)
 const CATEGORY_COLORS = {
@@ -134,23 +104,13 @@ const getHabitTone = (color = '') => {
   return 'neutral';
 };
 
-const getCategoryIcon = (cat) => {
-  switch (cat) {
-    case 'Trabalho': return <Briefcase className="w-4 h-4 mr-1.5" />;
-    case 'Pessoal': return <User className="w-4 h-4 mr-1.5" />;
-    case 'Saúde': return <Heart className="w-4 h-4 mr-1.5" />;
-    case 'Estudos': return <BookOpen className="w-4 h-4 mr-1.5" />;
-    default: return <Tag className="w-4 h-4 mr-1.5" />;
-  }
-};
-
 // DADOS INICIAIS DE EXEMPLO
 const INITIAL_TASKS = [
   { id: '1', title: 'Rever proposta de projeto e métricas', category: 'Trabalho', priority: 'Alta', status: 'em_curso', dueDate: '2026-07-30' },
   { id: '2', title: 'Treino de corrida no parque (30 min)', category: 'Saúde', priority: 'Média', status: 'concluido', dueDate: '2026-07-30' },
-  { id: '3', title: 'Ler 2 capítulos de Hábitos Atómicos', category: 'Estudos', priority: 'Baixa', status: 'a_fazer', dueDate: '2026-07-30' },
+  { id: '3', title: 'Ler 2 capítulos de Hábitos Atômicos', category: 'Estudos', priority: 'Baixa', status: 'a_fazer', dueDate: '2026-07-30' },
   { id: '4', title: 'Organizar despensa e compras semanais', category: 'Pessoal', priority: 'Média', status: 'a_fazer', dueDate: '2026-07-30' },
-  { id: '5', title: 'Enviar relatório semanal para a equipa', category: 'Trabalho', priority: 'Alta', status: 'a_fazer', dueDate: '2026-07-31' },
+  { id: '5', title: 'Enviar relatório semanal para a equipe', category: 'Trabalho', priority: 'Alta', status: 'a_fazer', dueDate: '2026-07-31' },
   { id: '6', title: 'Consulta de avaliação física', category: 'Saúde', priority: 'Média', status: 'a_fazer', dueDate: '2026-08-01' }
 ];
 
@@ -167,7 +127,7 @@ const INITIAL_NOTES = [
 ];
 
 const INITIAL_EVENTS = [
-  { id: 'e1', title: 'Reunião de Alinhamento de Equipa', date: '2026-07-30', time: '14:30', category: 'Trabalho', whatsappAlert: true, reminderMinutes: 15 },
+  { id: 'e1', title: 'Reunião de alinhamento da equipe', date: '2026-07-30', time: '14:30', category: 'Trabalho', whatsappAlert: true, reminderMinutes: 15 },
   { id: 'e2', title: 'Consulta Médica de Rotina', date: '2026-07-30', time: '17:00', category: 'Saúde', whatsappAlert: true, reminderMinutes: 30 },
   { id: 'e3', title: 'Workshop Online: React & Tailwind', date: '2026-07-31', time: '10:00', category: 'Estudos', whatsappAlert: true, reminderMinutes: 60 }
 ];
@@ -196,7 +156,7 @@ function WeatherWidget() {
               const geoData = await geoRes.json();
               setCity(geoData.address.city || geoData.address.town || geoData.address.village || "Localização Atual");
             }
-          } catch (e) {}
+          } catch {}
         }
 
         const weatherRes = await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${latitude}&longitude=${longitude}&current_weather=true&hourly=relative_humidity_2m&daily=temperature_2m_max,temperature_2m_min&timezone=auto`);
@@ -228,7 +188,7 @@ function WeatherWidget() {
       (position) => {
         fetchWeather(position.coords.latitude, position.coords.longitude, null);
       },
-      (err) => {
+      () => {
         // Fallback
         fetchWeather(-22.9068, -43.1729, "Rio de Janeiro");
       }
@@ -247,38 +207,56 @@ function WeatherWidget() {
 
   if (loading) {
     return (
-      <div className="flex flex-col items-end justify-center h-full">
-        <Loader2 className="w-5 h-5 text-stone-300 animate-spin" />
+      <div className="weather-brief is-loading" aria-label="Carregando clima">
+        <span className="weather-brief-kicker">Clima local</span>
+        <Loader2 className="w-4 h-4 animate-spin" />
       </div>
     );
   }
 
   if (error || !weather) {
     return (
-      <div className="flex flex-col items-end text-right opacity-50">
-         <div className="flex items-center space-x-2 text-stone-400">
-           <CloudSun className="w-5 h-5" />
-           <span className="text-sm font-bold">Clima Indisponível</span>
-         </div>
+      <div className="weather-brief is-unavailable">
+        <span className="weather-brief-kicker">Clima local</span>
+        <div className="weather-brief-unavailable">
+          <CloudSun className="w-4 h-4" />
+          <span>Dados indisponíveis</span>
+        </div>
       </div>
     );
   }
 
-  const { icon: WeatherIcon, color } = getWeatherDetails(weather.weatherCode);
+  const { icon: WeatherIcon, label } = getWeatherDetails(weather.weatherCode);
 
   return (
-    <div className="flex flex-col items-end text-right">
-      <div className="flex items-center space-x-2">
-        <WeatherIcon className={`w-8 h-8 ${color}`} />
-        <span className="text-3xl font-black text-stone-900 tracking-tight">{weather.temp}°C</span>
+    <aside className="weather-brief" aria-label={`Clima em ${city}`}>
+      <div className="weather-brief-header">
+        <span className="weather-brief-kicker">Clima local</span>
+        <span className="weather-brief-location"><MapPin className="w-3 h-3" />{city}</span>
       </div>
-      <p className="text-[11px] text-stone-500 font-medium mt-1 uppercase tracking-wide">
-        {city} • Máx {weather.maxTemp}° / Mín {weather.minTemp}°
-      </p>
-      <div className="flex items-center space-x-3 text-[10px] font-semibold text-stone-400 mt-1">
-        <span className="flex items-center"><Droplets className="w-3 h-3 mr-1" />{weather.humidity}% Umid</span>
-        <span className="flex items-center"><Wind className="w-3 h-3 mr-1" />{weather.windSpeed} km/h</span>
+
+      <div className="weather-brief-current">
+        <WeatherIcon className="weather-brief-icon w-6 h-6" />
+        <strong>{weather.temp}<sup>°</sup></strong>
+        <span>{label}</span>
       </div>
+
+      <div className="weather-brief-metrics">
+        <span>Máx. {weather.maxTemp}° · Mín. {weather.minTemp}°</span>
+        <span><Droplets className="w-3 h-3" />{weather.humidity}%</span>
+        <span><Wind className="w-3 h-3" />{weather.windSpeed} km/h</span>
+      </div>
+    </aside>
+  );
+}
+
+function ViewLoading() {
+  return (
+    <div className="view-loading" role="status" aria-live="polite">
+      <span>[</span>
+      <Loader2 className="w-4 h-4 animate-spin" />
+      <span>]</span>
+      <p>Organizando a página</p>
     </div>
   );
 }
@@ -441,7 +419,7 @@ export default function App() {
         }
       });
     }
-  }, []);
+  }, [dailyHabitsState.lastDate]);
 
   const toggleDailyHabit = (habitId) => {
     setDailyHabitsState(prev => {
@@ -465,54 +443,135 @@ export default function App() {
     { id: 'notes', label: 'Notas' },
     { id: 'pomodoro', label: 'Foco (Pomodoro)' },
     { id: 'chat', label: 'Mensagens' },
-    { id: 'ai_setup', label: 'Assistente IA' },
+    { id: 'ai_setup', label: 'Ajudante do Dia' },
     { id: 'trash', label: 'Lixeira' }
   ];
+  const userInitials = (user?.displayName || user?.email || 'Usuário')
+    .split(/[\s@._-]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map(part => part.charAt(0).toUpperCase())
+    .join('');
 
   if (isAuthLoading) {
     return (
-      <div className="min-h-screen bg-stone-50 flex items-center justify-center">
-        <div className="w-8 h-8 border-4 border-emerald-600 border-t-transparent rounded-full animate-spin"></div>
+      <div className="login-loading-screen" role="status" aria-label="Carregando Organizador">
+        <div className="login-loading-mark">
+          <span>[</span>
+          <Loader2 className="w-4 h-4 animate-spin" />
+          <span>]</span>
+        </div>
+        <p>Preparando sua edição diária</p>
       </div>
     );
   }
 
   if (!user) {
     return (
-      <div className="login-screen min-h-screen bg-stone-50 flex flex-col items-center justify-center p-4">
-        <div className="login-card bg-white p-8 rounded-3xl shadow-[0_20px_50px_rgb(0,0,0,0.06)] max-w-md w-full space-y-8 text-center border border-stone-100/50">
-          <div className="login-mark w-20 h-20 bg-emerald-50 rounded-2xl flex items-center justify-center mx-auto mb-2 shadow-sm border border-emerald-100/50">
-            <CheckSquare className="w-10 h-10 text-emerald-600" />
+      <div className="login-screen">
+        <main className="login-document">
+          <header className="login-document-header">
+            <div className="login-wordmark">
+              <span className="login-wordmark-symbol">[ p ]</span>
+              <span>Organizador pessoal</span>
+            </div>
+            <span className="login-document-status">Acesso privado</span>
+          </header>
+
+          <div className="login-document-body">
+            <section className="login-cover" aria-labelledby="login-title">
+              <span className="login-kicker">Edição diária · 01</span>
+              <h1 id="login-title">Passo<br />a Passo</h1>
+              <div className="login-title-rule"></div>
+              <p className="login-cover-lead">
+                Um espaço calmo para organizar o que importa, acompanhar sua rotina e avançar um dia de cada vez.
+              </p>
+
+              <ol className="login-index" aria-label="Recursos do Organizador">
+                <li><span>01</span><strong>Planeje</strong><small>tarefas e agenda</small></li>
+                <li><span>02</span><strong>Acompanhe</strong><small>hábitos e foco</small></li>
+                <li><span>03</span><strong>Registre</strong><small>notas e ideias</small></li>
+              </ol>
+            </section>
+
+            <aside className="login-access" aria-labelledby="login-access-title">
+              <div className="login-access-heading">
+                <div className="login-access-mark">
+                  <span>[</span>
+                  <CheckSquare className="w-5 h-5" />
+                  <span>]</span>
+                </div>
+                <span className="login-kicker">Identificação</span>
+                <h2 id="login-access-title">Entrar no Organizador</h2>
+                <p>Use sua conta Google para acessar seus registros sincronizados e continuar de onde parou.</p>
+              </div>
+
+              <div className="login-security-record">
+                <ShieldCheck className="w-4 h-4" />
+                <div>
+                  <span>Conexão segura</span>
+                  <p>Seus dados ficam associados à sua conta e não são exibidos para outros usuários.</p>
+                </div>
+              </div>
+
+              <button onClick={handleLogin} className="login-google-button">
+                <svg className="w-5 h-5" viewBox="0 0 24 24" aria-hidden="true">
+                  <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
+                  <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
+                  <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
+                  <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
+                </svg>
+                <span>Continuar com o Google</span>
+                <ChevronRight className="w-4 h-4" />
+              </button>
+
+              <p className="login-access-note">
+                Ao continuar, o Google solicitará sua autorização antes de compartilhar os dados básicos da conta.
+              </p>
+            </aside>
           </div>
-          <div className="space-y-3">
-            <h1 className="text-3xl font-black text-stone-800 tracking-tight">Organizador</h1>
-            <p className="text-stone-500 font-medium text-sm leading-relaxed px-4">
-              Faça login com sua conta do Google para sincronizar suas tarefas, hábitos e calendário na nuvem.
-            </p>
-          </div>
-          
-          <div className="pt-4">
-            <button 
-              onClick={handleLogin}
-              className="w-full py-4 px-4 bg-white hover:bg-stone-50 text-stone-700 border border-stone-200 rounded-xl font-bold flex items-center justify-center space-x-3 transition-all hover:shadow-md hover:-transtone-y-0.5 active:transtone-y-0"
-            >
-              <svg className="w-5 h-5" viewBox="0 0 24 24">
-                <path fill="currentColor" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" />
-                <path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" />
-                <path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z" />
-                <path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" />
-              </svg>
-              <span>Continuar com o Google</span>
-            </button>
-          </div>
-        </div>
+
+          <footer className="login-document-footer">
+            <span>Passo a Passo · registro pessoal</span>
+            <span>Dados sincronizados na nuvem</span>
+          </footer>
+        </main>
       </div>
     );
   }
 
   return (
     <div className="app-shell text-stone-800 font-sans antialiased relative">
-      <Toaster position="top-right" richColors />
+      <Toaster
+        position="top-right"
+        theme="light"
+        closeButton
+        expand
+        gap={10}
+        duration={4200}
+        offset={{ top: 18, right: 18 }}
+        mobileOffset={{ top: 12, right: 12, left: 12 }}
+        containerAriaLabel="Notificações do Organizador"
+        toastOptions={{
+          classNames: {
+            toast: 'editorial-toast',
+            content: 'editorial-toast-content',
+            title: 'editorial-toast-title',
+            description: 'editorial-toast-description',
+            icon: 'editorial-toast-icon',
+            closeButton: 'editorial-toast-close',
+            actionButton: 'editorial-toast-action',
+            cancelButton: 'editorial-toast-cancel'
+          }
+        }}
+        icons={{
+          success: <Check className="w-4 h-4" />,
+          error: <X className="w-4 h-4" />,
+          warning: <AlertCircle className="w-4 h-4" />,
+          info: <Bell className="w-4 h-4" />,
+          loading: <Loader2 className="w-4 h-4 animate-spin" />
+        }}
+      />
 
       <button
         onClick={() => setMobileMenuOpen(true)}
@@ -532,7 +591,7 @@ export default function App() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              className="fixed inset-0 bg-stone-900/20 backdrop-blur-xs z-40"
+              className="menu-drawer-backdrop fixed inset-0 z-40"
               onClick={() => setMobileMenuOpen(false)}
             />
             <motion.div 
@@ -540,23 +599,29 @@ export default function App() {
               animate={{ x: 0 }}
               exit={{ x: "100%" }}
               transition={{ type: "spring", damping: 25, stiffness: 300 }}
-              className="menu-drawer fixed top-0 right-0 z-50 h-screen p-4 overflow-y-auto bg-white w-80 shadow-2xl flex flex-col justify-between"
+              className="menu-drawer fixed top-0 right-0 z-50 h-screen"
+              role="dialog"
+              aria-modal="true"
+              aria-labelledby="menu-drawer-title"
             >
-              <div>
-                <div className="border-b border-stone-100 pb-4 flex items-center justify-between">
-                  <span className="self-center text-xl font-bold whitespace-nowrap text-stone-900">Menu</span>
+              <div className="menu-drawer-main">
+                <header className="menu-drawer-header">
+                  <div>
+                    <span className="menu-drawer-kicker">Organizador pessoal</span>
+                    <h2 id="menu-drawer-title">Menu</h2>
+                  </div>
                   <button 
                     onClick={() => setMobileMenuOpen(false)} 
-                    className="text-stone-500 bg-transparent hover:text-stone-900 hover:bg-stone-100 rounded-md w-9 h-9 flex items-center justify-center transition-colors"
+                    className="menu-drawer-close"
+                    aria-label="Fechar menu"
                   >
                      <X className="w-5 h-5" />
-                     <span className="sr-only">Close menu</span>
                   </button>
-                </div>
+                </header>
                 
-                <div className="py-5 overflow-y-auto">
-                  <ul className="space-y-1 font-medium">
-                    {navItems.map((item) => {
+                <nav className="menu-drawer-nav" aria-label="Navegação principal">
+                  <ol>
+                    {navItems.map((item, index) => {
                       const isActive = activeTab === item.id;
                       return (
                         <li key={item.id}>
@@ -565,56 +630,55 @@ export default function App() {
                               handleTabChange(item.id);
                               setMobileMenuOpen(false);
                             }}
-                            className={`flex items-center w-full px-3 py-2.5 rounded-md group transition-colors ${
-                              isActive 
-                                ? 'bg-stone-100 text-stone-900 font-bold' 
-                                : 'text-stone-600 hover:bg-stone-50 hover:text-stone-900'
-                            }`}
+                            className={`menu-drawer-link ${isActive ? 'is-active' : ''}`}
+                            aria-current={isActive ? 'page' : undefined}
                           >
-                            <span className="flex-1 text-left text-sm font-medium">{item.label}</span>
+                            <span className="menu-drawer-index">{String(index + 1).padStart(2, '0')}</span>
+                            <span className="menu-drawer-label">{item.label}</span>
                             {item.badge > 0 && (
-                              <span className="inline-flex items-center justify-center px-2 py-0.5 ms-2 text-[10px] font-bold text-stone-800 bg-stone-200 rounded-md">
+                              <span className="menu-drawer-badge" aria-label={`${item.badge} tarefas pendentes`}>
                                 {item.badge}
                               </span>
                             )}
+                            <ChevronRight className="menu-drawer-arrow w-4 h-4" />
                           </button>
                         </li>
                       );
                     })}
-                  </ul>
-                </div>
+                  </ol>
+                </nav>
               </div>
 
               {/* Status de Sincronização do Google Calendar */}
-              <div className="pt-4 border-t border-stone-200 space-y-3">
+              <footer className="menu-drawer-footer">
                 <button 
                   onClick={() => {
                     handleTabChange('google_calendar');
                     setMobileMenuOpen(false);
                   }}
-                  className={`w-full p-2.5 rounded-md text-xs flex items-center justify-between transition-colors shadow-xs ${
-                    googleAccessToken 
-                      ? 'bg-blue-100 text-blue-900 font-medium' 
-                      : 'bg-stone-100 text-stone-700 hover:bg-stone-200'
-                  }`}
+                  className={`menu-calendar-status ${googleAccessToken ? 'is-connected' : ''}`}
                 >
-                  <div className="flex items-center space-x-2">
-                    <CalendarIcon className={`w-3.5 h-3.5 ${googleAccessToken ? 'text-blue-700' : 'text-stone-400'}`} />
-                    <span className="font-semibold">{googleAccessToken ? 'GCalendar Ativo' : 'Ativar GCalendar'}</span>
+                  <div className="menu-calendar-copy">
+                    <CalendarIcon className="w-4 h-4" />
+                    <div>
+                      <span className="menu-calendar-kicker">Integração externa</span>
+                      <strong>{googleAccessToken ? 'Google Calendar conectado' : 'Conectar Google Calendar'}</strong>
+                    </div>
                   </div>
-                  <span className={`w-2 h-2 rounded-full ${googleAccessToken ? 'bg-blue-600' : 'bg-stone-400'}`}></span>
+                  <span className="menu-calendar-indicator" aria-hidden="true"></span>
                 </button>
 
-                <div className="flex items-center space-x-3 px-2">
-                  <div className="w-8 h-8 rounded-md bg-stone-200 text-stone-800 font-bold flex items-center justify-center text-xs">
-                    GC
+                <div className="menu-user-record">
+                  <div className="menu-user-avatar">
+                    {userInitials || 'U'}
                   </div>
-                  <div className="text-xs overflow-hidden">
-                    <p className="font-semibold text-stone-800 truncate">{user ? user.displayName : 'Usuário'}</p>
-                    <p className="text-stone-500 truncate font-medium">{user ? user.email : 'Faça login'}</p>
+                  <div className="menu-user-copy">
+                    <span>Conta ativa</span>
+                    <p>{user ? user.displayName : 'Usuário'}</p>
+                    <small>{user ? user.email : 'Faça login'}</small>
                   </div>
                 </div>
-              </div>
+              </footer>
             </motion.div>
           </>
         )}
@@ -632,119 +696,67 @@ export default function App() {
               transition={{ duration: 0.3, ease: "easeInOut" }}
               className="editorial-view max-w-5xl mx-auto space-y-8"
             >
-              {activeTab === 'dashboard' && (
-                <DashboardView 
-                  tasks={tasks} 
-                  setTasks={setTasks}
-                  notes={notes}
-                  setNotes={setNotes}
-                  setActiveTab={handleTabChange}
-                  dailyHabitsState={dailyHabitsState}
-                  toggleDailyHabit={toggleDailyHabit}
-                  habits={habits}
-                  events={events}
-                  syncToFirestore={syncToFirestore}
-                />
-              )}
-              {activeTab === 'calendar' && (
-                <CalendarView 
-                  events={events} 
-                  setEvents={setEvents} 
-                  tasks={tasks} 
-                  syncToFirestore={syncToFirestore}
-                  googleAccessToken={googleAccessToken}
-                />
-              )}
-              {activeTab === 'google_calendar' && (
-                <GoogleCalendarSyncView 
-                  googleAccessToken={googleAccessToken}
-                  handleLogin={handleLogin}
-                  handleLogout={handleLogout}
-                />
-              )}
+              <Suspense fallback={<ViewLoading />}>
+                {activeTab === 'dashboard' && (
+                  <DashboardView
+                    tasks={tasks}
+                    setTasks={setTasks}
+                    notes={notes}
+                    setNotes={setNotes}
+                    setActiveTab={handleTabChange}
+                    dailyHabitsState={dailyHabitsState}
+                    toggleDailyHabit={toggleDailyHabit}
+                    habits={habits}
+                    events={events}
+                    syncToFirestore={syncToFirestore}
+                  />
+                )}
+                {activeTab === 'calendar' && (
+                  <CalendarView
+                    events={events}
+                    setEvents={setEvents}
+                    syncToFirestore={syncToFirestore}
+                    googleAccessToken={googleAccessToken}
+                  />
+                )}
+                {activeTab === 'google_calendar' && (
+                  <GoogleCalendarSyncView
+                    googleAccessToken={googleAccessToken}
+                    handleLogin={handleLogin}
+                    handleLogout={handleLogout}
+                  />
+                )}
                 {activeTab === 'tasks' && <TasksView tasks={tasks} setTasks={setTasks} syncToFirestore={syncToFirestore} />}
-              {activeTab === 'habits' && <HabitsView habits={habits} setHabits={setHabits} syncToFirestore={syncToFirestore} />}
-              {activeTab === 'notes' && <NotesView notes={notes} setNotes={setNotes} syncToFirestore={syncToFirestore} />}
-              {activeTab === 'pomodoro' && <PomodoroView tasks={tasks} setTasks={setTasks} syncToFirestore={syncToFirestore} />}
-              {activeTab === 'chat' && <ChatView currentUser={user} />}
-                            {activeTab === 'ai_setup' && (
-                <div className="max-w-4xl mx-auto space-y-6 animate-fade-in">
-                  <header className="mb-8">
-                    <button
-                      onClick={() => handleTabChange('dashboard')}
-                      className="inline-flex items-center gap-2 mb-3 text-xs font-semibold text-stone-600 hover:text-stone-900 bg-white hover:bg-stone-100 px-3 py-1.5 rounded-lg border border-stone-200 shadow-xs transition-colors cursor-pointer"
-                    >
-                      <ArrowLeft className="w-4 h-4" />
-                      <span>Voltar ao Painel</span>
-                    </button>
-                    <h1 className="text-3xl font-black text-stone-800 tracking-tight mb-2">Assistente IA Local</h1>
-                    <p className="text-stone-500">Configure sua inteligência artificial privada e 100% gratuita.</p>
-                  </header>
-
-                  <div className="bg-white rounded-xl shadow-sm border border-stone-100 p-8">
-                    <div className="flex items-start gap-6 mb-8">
-                      <div className="w-16 h-16 rounded-2xl bg-amber-100 flex items-center justify-center shrink-0">
-                        <Brain className="w-8 h-8 text-amber-600" />
-                      </div>
-                      <div>
-                        <h2 className="text-xl font-bold text-stone-800 mb-2">Traga sua Própria IA (BYOAI)</h2>
-                        <p className="text-stone-600 leading-relaxed">
-                          O Organizador Pessoal foi construído com foco em <strong>privacidade absoluta</strong>.
-                          Em vez de enviar suas notas e tarefas para a nuvem da OpenAI ou Google, este aplicativo
-                          se conecta a uma IA que roda <strong>diretamente no seu computador</strong>.
-                        </p>
-                      </div>
-                    </div>
-
-                    <h3 className="text-lg font-bold text-stone-800 mb-4 border-b border-stone-100 pb-2">Como Ativar (Passo a Passo)</h3>
-                    
-                    <div className="space-y-6">
-                      <div className="flex gap-4">
-                        <div className="w-8 h-8 rounded-full bg-stone-900 text-white flex items-center justify-center font-bold shrink-0">1</div>
-                        <div>
-                          <h4 className="font-bold text-stone-800">Baixe e instale o Ollama</h4>
-                          <p className="text-stone-600 text-sm mt-1">O Ollama é o motor que roda os modelos de IA no seu computador.</p>
-                          <a href="https://ollama.com/download" target="_blank" rel="noopener noreferrer" className="inline-block mt-2 text-sm text-emerald-600 hover:text-emerald-700 font-medium underline">Baixar Ollama no site oficial</a>
-                        </div>
-                      </div>
-
-                      <div className="flex gap-4">
-                        <div className="w-8 h-8 rounded-full bg-stone-900 text-white flex items-center justify-center font-bold shrink-0">2</div>
-                        <div>
-                          <h4 className="font-bold text-stone-800">Baixe o Modelo (Llama 3)</h4>
-                          <p className="text-stone-600 text-sm mt-1">Abra o seu Terminal (Mac/Linux) ou Prompt de Comando (Windows) e digite o seguinte comando:</p>
-                          <div className="mt-2 bg-stone-900 text-stone-200 px-4 py-2 rounded-lg font-mono text-sm inline-block">
-                            ollama run llama3.2
-                          </div>
-                          <p className="text-stone-500 text-xs mt-2">O download tem cerca de 2GB a 4GB. Aguarde a conclusão.</p>
-                        </div>
-                      </div>
-
-                      <div className="flex gap-4">
-                        <div className="w-8 h-8 rounded-full bg-stone-900 text-white flex items-center justify-center font-bold shrink-0">3</div>
-                        <div>
-                          <h4 className="font-bold text-stone-800">Deixe rodando no fundo</h4>
-                          <p className="text-stone-600 text-sm mt-1">Pronto! Sempre que você quiser que o Ajudante do Dia funcione aqui no aplicativo, basta garantir que o programa Ollama esteja aberto no seu computador. Os dados nunca saem da sua máquina.</p>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-              {activeTab === 'trash' && (
-                <TrashView 
-                  tasks={tasks} setTasks={setTasks}
-                  habits={habits} setHabits={setHabits}
-                  events={events} setEvents={setEvents}
-                  notes={notes} setNotes={setNotes}
-                  syncToFirestore={syncToFirestore}
-                />
-              )}
+                {activeTab === 'habits' && <HabitsView habits={habits} setHabits={setHabits} syncToFirestore={syncToFirestore} />}
+                {activeTab === 'notes' && <NotesView notes={notes} setNotes={setNotes} syncToFirestore={syncToFirestore} />}
+                {activeTab === 'pomodoro' && <PomodoroView tasks={tasks} setTasks={setTasks} syncToFirestore={syncToFirestore} />}
+                {activeTab === 'chat' && <ChatView currentUser={user} />}
+                {activeTab === 'ai_setup' && <AISetupView onBack={() => handleTabChange('dashboard')} />}
+                {activeTab === 'trash' && (
+                  <TrashView
+                    tasks={tasks} setTasks={setTasks}
+                    habits={habits} setHabits={setHabits}
+                    events={events} setEvents={setEvents}
+                    notes={notes} setNotes={setNotes}
+                    syncToFirestore={syncToFirestore}
+                  />
+                )}
+              </Suspense>
             </motion.div>
           </AnimatePresence>
         </main>
       </div>
-      {(import.meta.env.VITE_ENABLE_LOCAL_AI === 'true') && <LocalAIAssistant tasks={tasks} habits={habits} notes={notes} user={user} />}
+      {(import.meta.env.VITE_ENABLE_LOCAL_AI === 'true') && (
+        <Suspense fallback={null}>
+          <LocalAIAssistant
+            tasks={tasks}
+            habits={habits}
+            notes={notes}
+            events={events}
+            user={user}
+          />
+        </Suspense>
+      )}
     </div>
   );
 }
@@ -757,64 +769,68 @@ function WeeklyCalendarPreview({ events }) {
     return d;
   });
 
-  const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
-  const todayEvents = events.filter(e => e.date === todayStr && !e.deleted);
+  const formatRangeDate = (date) => date
+    .toLocaleDateString('pt-BR', { day: '2-digit', month: 'short' })
+    .replace('.', '')
+    .toUpperCase();
+  const weekRange = `${formatRangeDate(nextDays[0])} — ${formatRangeDate(nextDays[nextDays.length - 1])}`;
 
   return (
-    <div className="editorial-panel bg-white p-4 sm:p-5 rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] space-y-3">
-      {/* Linha dos dias */}
-      <div className="flex justify-between items-center overflow-x-auto gap-2 scrollbar-hide pb-1">
+    <section className="weekly-agenda" aria-labelledby="weekly-agenda-title">
+      <header className="weekly-agenda-header">
+        <div>
+          <span className="weekly-agenda-kicker">Agenda semanal · próximos 7 dias</span>
+          <h2 id="weekly-agenda-title">Visão da semana</h2>
+        </div>
+        <span className="weekly-agenda-range">{weekRange}</span>
+      </header>
+
+      <div className="weekly-agenda-days" role="list">
         {nextDays.map((date, i) => {
           const year = date.getFullYear();
           const month = String(date.getMonth() + 1).padStart(2, '0');
           const day = String(date.getDate()).padStart(2, '0');
           const dateStr = `${year}-${month}-${day}`;
           
-          const dayEvents = events.filter(e => e.date === dateStr && !e.deleted);
-          const hasEvent = dayEvents.length > 0;
+          const dayEvents = events
+            .filter(e => e.date === dateStr && !e.deleted)
+            .sort((first, second) => (first.time || '').localeCompare(second.time || ''));
+          const weekday = date.toLocaleDateString('pt-BR', { weekday: 'short' }).replace('.', '');
+          const monthLabel = date.toLocaleDateString('pt-BR', { month: 'short' }).replace('.', '');
           
           return (
-            <div key={i} className="flex flex-col items-center group cursor-default min-w-[2.5rem]">
-              <span className={`text-[10px] font-bold uppercase mb-1.5 tracking-wider ${i === 0 ? 'text-stone-900' : 'text-stone-400'}`}>
-                {i === 0 ? 'Hoje' : DAYS_OF_WEEK[date.getDay()]}
-              </span>
-              <div className={`w-8 h-8 rounded-full flex flex-col items-center justify-center relative transition-all ${
-                i === 0 ? 'bg-stone-900 text-white shadow-sm' : 'text-stone-600 bg-stone-50 group-hover:bg-stone-100'
-              }`}>
-                <span className="text-sm font-black tracking-tight">{date.getDate()}</span>
+            <article key={dateStr} className={`weekly-agenda-day ${i === 0 ? 'is-today' : ''}`} role="listitem">
+              <div className="weekly-agenda-date">
+                <span>{i === 0 ? 'Hoje' : weekday}</span>
+                <div>
+                  <strong>{String(date.getDate()).padStart(2, '0')}</strong>
+                  <small>{monthLabel}</small>
+                </div>
               </div>
-              <div className="h-1 mt-1.5 flex gap-0.5 justify-center">
-                {dayEvents.slice(0, 3).map((e, idx) => {
-                  const style = getCategoryStyle(e.category);
-                  return <div key={idx} className={`w-1 h-1 rounded-full ${style.dot}`} title={e.title}></div>;
-                })}
-                {!hasEvent && <div className="w-1 h-1 rounded-full bg-transparent"></div>}
+
+              <div className="weekly-agenda-events">
+                {dayEvents.length > 0 ? (
+                  <>
+                    {dayEvents.slice(0, 2).map(event => (
+                      <div key={event.id} className="weekly-agenda-event" title={event.title}>
+                        <span className={`weekly-agenda-event-dot ${getCategoryStyle(event.category).dot}`}></span>
+                        <div>
+                          <time>{event.time || '--:--'}</time>
+                          <p>{event.title}</p>
+                        </div>
+                      </div>
+                    ))}
+                    {dayEvents.length > 2 && <span className="weekly-agenda-more">+ {dayEvents.length - 2} eventos</span>}
+                  </>
+                ) : (
+                  <span className="weekly-agenda-empty">Sem eventos</span>
+                )}
               </div>
-            </div>
+            </article>
           );
         })}
       </div>
-
-      {/* Prévia de Eventos de Hoje */}
-      {todayEvents.length > 0 ? (
-        <div className="pt-3 border-t border-stone-100/50 space-y-2">
-          <span className="text-[10px] font-bold text-stone-400 uppercase tracking-wider">Agendamentos de Hoje</span>
-          <div className="space-y-1.5">
-            {todayEvents.map(e => (
-              <div key={e.id} className="flex items-center space-x-2 text-sm">
-                <div className={`w-1.5 h-1.5 rounded-full ${getCategoryStyle(e.category).dot}`}></div>
-                <span className="font-semibold text-stone-800 shrink-0">{e.time}</span>
-                <span className="text-stone-600 truncate">{e.title}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      ) : (
-        <div className="pt-2 border-t border-stone-100/50">
-           <span className="text-xs font-medium text-stone-400">Nenhum agendamento para hoje. Aproveite o dia!</span>
-        </div>
-      )}
-    </div>
+    </section>
   );
 }
 
@@ -938,9 +954,6 @@ function DashboardView({
 
   const availableCategories = ['Trabalho', 'Pessoal', 'Saúde', 'Estudos'];
   
-  // Cálculo de progresso dos Hábitos
-  const completedHabitsCount = Object.values(dailyHabitsState.completed).filter(Boolean).length;
-  const habitsProgressPct = habits.length > 0 ? Math.round((completedHabitsCount / habits.length) * 100) : 0;
   const todayLabel = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' }).format(new Date());
 
   return (
@@ -1022,9 +1035,9 @@ function DashboardView({
                 {/* Ação (Check) */}
                 <div>
                   {isDone ? (
-                    <CheckCircle2 className="w-7 h-7 text-emerald-500" />
+                    <CheckCircle2 className="habit-tile-check is-complete w-7 h-7" />
                   ) : (
-                    <Circle className="w-7 h-7 text-white/40 group-hover:text-white transition-colors" />
+                    <Circle className="habit-tile-check w-7 h-7" />
                   )}
                 </div>
               </div>
@@ -1271,7 +1284,7 @@ function DashboardView({
           <article className="note-viewer relative z-10" role="dialog" aria-modal="true" aria-labelledby="note-viewer-title">
             <header className="note-viewer-header flex items-start justify-between">
               <div>
-                <span className="note-drawer-kicker">Nota arquivada · {selectedNote.category}</span>
+                <span className="note-drawer-kicker">Nota ativa · {selectedNote.category}</span>
                 <h2 id="note-viewer-title" className="note-viewer-title">{selectedNote.title}</h2>
               </div>
               <button
@@ -1359,7 +1372,7 @@ function DashboardView({
                     Conteúdo
                   </label>
                   <textarea
-                    placeholder="Escreva as tuas notas ou detalhes aqui..."
+                    placeholder="Escreva suas notas ou detalhes aqui..."
                     rows="10"
                     value={newNoteContent}
                     onChange={(e) => setNewNoteContent(e.target.value)}
@@ -1395,74 +1408,9 @@ function DashboardView({
 }
 
 // ==========================================
-// 2. VISTA DE CONFIGURAÇÃO DO GOOGLE CALENDAR
-// ==========================================
-function GoogleCalendarSyncView({ googleAccessToken, handleLogin, handleLogout }) {
-  return (
-    <div className="space-y-6">
-      <div className="bg-blue-800 text-white p-6 rounded-lg shadow-[0_8px_30px_rgb(0,0,0,0.04)] flex flex-col md:flex-row justify-between items-start md:items-center gap-6">
-        <div className="flex items-center space-x-4">
-          <div className="w-12 h-12 rounded-md bg-blue-700 flex items-center justify-center text-white shrink-0">
-            <CalendarIcon className="w-7 h-7" />
-          </div>
-          <div>
-            <h2 className="text-xl font-bold">Sincronização com Google Calendar</h2>
-            <p className="text-blue-100 text-sm mt-0.5">
-              Sincronize seus eventos criados aqui diretamente na sua agenda do Google para receber notificações push gratuitas.
-            </p>
-          </div>
-        </div>
-      </div>
-
-      <div className="bg-white p-6 rounded-lg shadow-[0_8px_30px_rgb(0,0,0,0.04)] space-y-5 max-w-2xl">
-        <h3 className="font-bold text-stone-900 text-base flex items-center space-x-2">
-          <Settings className="w-5 h-5 text-blue-700" />
-          <span>Status da Conexão</span>
-        </h3>
-
-        <div className="space-y-6">
-          <div className="flex items-center space-x-3 p-4 bg-stone-50 rounded-lg border border-stone-200">
-            <div className={`w-3 h-3 rounded-full ${googleAccessToken ? 'bg-emerald-500' : 'bg-rose-500'}`}></div>
-            <div className="flex-1">
-              <p className="font-semibold text-stone-800">
-                {googleAccessToken ? 'Conectado ao Google Calendar' : 'Não conectado'}
-              </p>
-              <p className="text-sm text-stone-500">
-                {googleAccessToken 
-                  ? 'Seus novos eventos serão criados automaticamente na sua agenda principal.'
-                  : 'Faça login para permitir que o aplicativo adicione eventos na sua agenda.'}
-              </p>
-            </div>
-          </div>
-
-          <div className="pt-2">
-            {!googleAccessToken ? (
-              <button
-                onClick={handleLogin}
-                className="w-full md:w-auto px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white font-bold rounded-md text-sm shadow-sm transition-all flex items-center justify-center space-x-2"
-              >
-                <CalendarIcon className="w-4 h-4" />
-                <span>Vincular Conta do Google</span>
-              </button>
-            ) : (
-              <button
-                onClick={handleLogout}
-                className="w-full md:w-auto px-6 py-3 bg-white hover:bg-rose-50 text-rose-700 border border-rose-200 font-bold rounded-md text-sm shadow-sm transition-all flex items-center justify-center space-x-2"
-              >
-                <span>Desvincular e Sair</span>
-              </button>
-            )}
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-// ==========================================
 // 3. VISTA DE CALENDÁRIO MENSAL
 // ==========================================
-function CalendarView({ events, setEvents, tasks, syncToFirestore, googleAccessToken }) {
+function CalendarView({ events, setEvents, syncToFirestore, googleAccessToken }) {
   const [currentDate, setCurrentDate] = useState(() => {
     const today = new Date();
     return new Date(today.getFullYear(), today.getMonth(), 1);
@@ -1521,13 +1469,15 @@ function CalendarView({ events, setEvents, tasks, syncToFirestore, googleAccessT
       reminderMinutes: 15
     };
 
+    let syncedWithGoogle = false;
+
     // Sincroniza com Google Calendar se o token estiver disponível e o usuário quiser
     if (googleAccessToken && syncGoogle) {
       try {
         const googleId = await addEventToGoogleCalendar(newEvent, googleAccessToken);
         if (googleId) {
           newEvent.googleEventId = googleId;
-          toast.success("Evento adicionado ao Google Calendar!");
+          syncedWithGoogle = true;
         }
       } catch (err) {
         toast.error(err.message || "Falha ao adicionar ao Google Calendar.");
@@ -1541,6 +1491,7 @@ function CalendarView({ events, setEvents, tasks, syncToFirestore, googleAccessT
     const updatedEvents = [...events, newEvent];
     setEvents(updatedEvents);
     if(syncToFirestore) syncToFirestore('events', updatedEvents);
+    toast.success(syncedWithGoogle ? 'Evento adicionado ao Google Calendar!' : 'Evento adicionado ao calendário!');
     
     setEventTitle('');
     setIsAddingEvent(false);
@@ -1650,6 +1601,7 @@ function CalendarView({ events, setEvents, tasks, syncToFirestore, googleAccessT
                     if (ev.googleEventId && googleAccessToken) {
                       await deleteEventFromGoogleCalendar(ev.googleEventId, googleAccessToken);
                     }
+                    toast.success('Evento movido para a Lixeira');
                   }} className="text-stone-500 hover:text-rose-600 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 className="w-4 h-4" /></button>
                 </div>
               );
@@ -1667,14 +1619,24 @@ function CalendarView({ events, setEvents, tasks, syncToFirestore, googleAccessT
 function TasksView({ tasks, setTasks, syncToFirestore }) {
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskCategory, setNewTaskCategory] = useState('Trabalho');
+  const [newTaskDueDate, setNewTaskDueDate] = useState('');
 
   const addTask = (e) => {
     e.preventDefault();
     if (!newTaskTitle.trim()) return;
-    const updatedTasks = [...tasks, { id: Date.now().toString(), title: newTaskTitle, category: newTaskCategory, priority: 'Média', status: 'a_fazer', dueDate: '2026-07-30' }];
+    const updatedTasks = [...tasks, {
+      id: Date.now().toString(),
+      title: newTaskTitle.trim(),
+      category: newTaskCategory,
+      priority: 'Média',
+      status: 'a_fazer',
+      dueDate: newTaskDueDate || null
+    }];
     setTasks(updatedTasks);
     if(syncToFirestore) syncToFirestore('tasks', updatedTasks);
     setNewTaskTitle('');
+    setNewTaskDueDate('');
+    toast.success('Tarefa criada com sucesso!');
   };
 
   return (
@@ -1686,6 +1648,15 @@ function TasksView({ tasks, setTasks, syncToFirestore }) {
         </div>
         <div className="tasks-intake-fields">
           <input type="text" placeholder="O que precisa ser feito?" value={newTaskTitle} onChange={(e) => setNewTaskTitle(e.target.value)} className="task-title-field" />
+          <label className="task-date-field">
+            <span>Prazo · opcional</span>
+            <input
+              type="date"
+              value={newTaskDueDate}
+              onChange={(e) => setNewTaskDueDate(e.target.value)}
+              aria-label="Prazo da tarefa"
+            />
+          </label>
           <div className="task-category-options" role="group" aria-label="Categoria da tarefa">
             {['Trabalho', 'Pessoal', 'Saúde', 'Estudos'].map(category => (
               <button
@@ -1798,7 +1769,7 @@ function HabitsView({ habits, setHabits, syncToFirestore }) {
     <div className="habits-view space-y-6">
       <form onSubmit={handleAddHabit} className="habits-intake">
         <div className="habits-intake-heading">
-          <span className="calendar-kicker">Daily log · novo registro</span>
+          <span className="calendar-kicker">Rastreador de hábitos · novo registro</span>
           <h2>Adicionar hábito</h2>
         </div>
 
@@ -1862,7 +1833,7 @@ function HabitsView({ habits, setHabits, syncToFirestore }) {
             return (
               <div key={h.id} className={`habit-note habit-tone-${habitTone} group ${h.color}`}>
                 <div className="habit-note-main">
-                  <div className="flex justify-between items-start mb-2">
+                  <div className="habit-note-head flex justify-between items-start">
                     <div className={`habit-note-icon ${h.iconColor || 'text-stone-800'}`}>
                       <Icon className="w-4 h-4" />
                     </div>
@@ -1897,31 +1868,157 @@ function HabitsView({ habits, setHabits, syncToFirestore }) {
 // 6. VISTA DE BLOCO DE NOTAS
 // ==========================================
 function NotesView({ notes, setNotes, syncToFirestore }) {
+  const [newNoteTitle, setNewNoteTitle] = useState('');
+  const [newNoteContent, setNewNoteContent] = useState('');
+  const [newNoteCategory, setNewNoteCategory] = useState('Trabalho');
+  const [selectedNote, setSelectedNote] = useState(null);
+  const availableCategories = ['Trabalho', 'Pessoal', 'Saúde', 'Estudos'];
+
+  const handleAddNote = (e) => {
+    e.preventDefault();
+    if (!newNoteTitle.trim()) return;
+
+    const newNote = {
+      id: Date.now().toString(),
+      title: newNoteTitle.trim(),
+      content: newNoteContent.trim(),
+      category: newNoteCategory
+    };
+
+    const updatedNotes = [newNote, ...notes];
+    setNotes(updatedNotes);
+    if(syncToFirestore) syncToFirestore('notes', updatedNotes);
+    setNewNoteTitle('');
+    setNewNoteContent('');
+    setNewNoteCategory('Trabalho');
+    toast.success('Nota criada com sucesso!');
+  };
+
+  const activeNotes = notes.filter(n => !n.deleted);
+
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-      {notes.filter(n => !n.deleted).map(n => {
-        const style = getCategoryStyle(n.category);
-        return (
-          <div key={n.id} className={`p-5 rounded-md ${style.bg} space-y-2 shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-lg transition-shadow group`}>
-            <div className="flex justify-between items-start">
-              <span className="text-xs font-bold text-stone-800">{n.category}</span>
-              <button 
-                onClick={() => {
-                  const updatedNotes = notes.map(note => note.id === n.id ? { ...note, deleted: true } : note);
-                  setNotes(updatedNotes);
-                  if(syncToFirestore) syncToFirestore('notes', updatedNotes);
-                  toast.success('Nota movida para a Lixeira');
-                }}
-                className="opacity-0 group-hover:opacity-100 text-stone-400 hover:text-rose-500 transition-colors"
-              >
-                <Trash2 className="w-4 h-4" />
-              </button>
-            </div>
-            <h4 className="font-bold text-stone-900">{n.title}</h4>
-            <p className="text-sm text-stone-800 leading-relaxed font-normal">{n.content}</p>
+    <div className="notes-view space-y-7">
+      <form onSubmit={handleAddNote} className="notes-intake">
+        <div className="notes-intake-heading">
+          <span className="calendar-kicker">Notas · novo registro</span>
+          <h2>Escrever nota</h2>
+        </div>
+
+        <div className="notes-intake-grid">
+          <div className="notes-main-fields">
+            <input
+              type="text"
+              placeholder="Título da nota"
+              value={newNoteTitle}
+              onChange={(e) => setNewNoteTitle(e.target.value)}
+              className="notes-title-field"
+            />
+            <textarea
+              placeholder="Escreva suas notas ou detalhes aqui..."
+              rows="7"
+              value={newNoteContent}
+              onChange={(e) => setNewNoteContent(e.target.value)}
+              className="notes-content-field"
+            ></textarea>
           </div>
-        );
-      })}
+
+          <aside className="notes-meta-fields">
+            <span className="habit-field-label">Categoria</span>
+            <div className="note-category-list notes-category-list" role="group" aria-label="Categoria da nota">
+              {availableCategories.map((category) => (
+                <button
+                  key={category}
+                  type="button"
+                  onClick={() => setNewNoteCategory(category)}
+                  className={`note-category-option ${newNoteCategory === category ? 'is-selected' : ''}`}
+                  aria-pressed={newNoteCategory === category}
+                >
+                  <span className="note-category-dot" />
+                  {category}
+                </button>
+              ))}
+            </div>
+            <button type="submit" className="notes-submit-button">
+              <Save className="w-4 h-4" />
+              <span>Salvar nota</span>
+            </button>
+          </aside>
+        </div>
+      </form>
+
+      <section className="notes-archive">
+        <div className="notes-list-header">
+          <h3 className="section-eyebrow section-heading-title">Minhas notas · {String(activeNotes.length).padStart(2, '0')}</h3>
+        </div>
+
+        {activeNotes.length > 0 ? (
+          <div className="notes-grid">
+            {activeNotes.map(n => {
+              const style = getCategoryStyle(n.category);
+              return (
+                <article key={n.id} className={`note-preview-card notes-card ${style.bg}`}>
+                  <button
+                    type="button"
+                    onClick={() => setSelectedNote(n)}
+                    className="notes-card-open"
+                    aria-label={`Abrir nota ${n.title}`}
+                  >
+                    <span className="note-preview-category">{n.category}</span>
+                    <h4>{n.title}</h4>
+                    <p>{n.content || 'Esta nota ainda não possui conteúdo.'}</p>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => {
+                      const updatedNotes = notes.map(note => note.id === n.id ? { ...note, deleted: true } : note);
+                      setNotes(updatedNotes);
+                      if(syncToFirestore) syncToFirestore('notes', updatedNotes);
+                      toast.success('Nota movida para a Lixeira');
+                    }}
+                    className="notes-delete-button"
+                    aria-label="Mover nota para a lixeira"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </article>
+              );
+            })}
+          </div>
+        ) : (
+          <p className="notes-empty">Nenhuma nota registrada ainda.</p>
+        )}
+      </section>
+
+      {selectedNote && (
+        <div className="note-viewer-overlay fixed inset-0 z-50 flex items-center justify-center p-5 sm:p-8">
+          <div
+            className="note-viewer-backdrop fixed inset-0"
+            onClick={() => setSelectedNote(null)}
+          ></div>
+
+          <article className="note-viewer relative z-10" role="dialog" aria-modal="true" aria-labelledby="notes-viewer-title">
+            <header className="note-viewer-header flex items-start justify-between">
+              <div>
+                <span className="note-drawer-kicker">Nota ativa · {selectedNote.category}</span>
+                <h2 id="notes-viewer-title" className="note-viewer-title">{selectedNote.title}</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedNote(null)}
+                className="note-drawer-close"
+                aria-label="Fechar visualização da nota"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </header>
+            <div className="editorial-rule"></div>
+            <div className="note-viewer-content">
+              {selectedNote.content || 'Esta nota ainda não possui conteúdo.'}
+            </div>
+            <footer className="note-viewer-footer">Passo a passo · registro pessoal</footer>
+          </article>
+        </div>
+      )}
     </div>
   );
 }
@@ -1946,9 +2043,10 @@ function PomodoroView({ tasks, setTasks, syncToFirestore }) {
       
       if (selectedTaskId) {
         toast.custom((t) => (
-          <div className="bg-white p-4 rounded-xl shadow-xl flex flex-col space-y-3 ring-1 ring-stone-200 pointer-events-auto">
-            <p className="text-sm font-bold text-stone-800">Deseja marcar a tarefa focada como concluída?</p>
-            <div className="flex space-x-2">
+          <div className="editorial-toast-prompt pointer-events-auto">
+            <span className="editorial-toast-prompt-kicker">Sessão de foco · ação</span>
+            <p>Deseja marcar a tarefa focada como concluída?</p>
+            <div className="editorial-toast-prompt-actions">
               <button 
                 onClick={() => {
                   const updatedTasks = tasks.map(task => task.id === selectedTaskId ? { ...task, status: 'concluido' } : task);
@@ -1957,9 +2055,9 @@ function PomodoroView({ tasks, setTasks, syncToFirestore }) {
                   toast.dismiss(t);
                   setSelectedTaskId('');
                 }}
-                className="flex-1 bg-emerald-500 text-white text-xs font-bold py-2 rounded shadow-sm"
+                className="editorial-toast-prompt-confirm"
               >Sim</button>
-              <button onClick={() => toast.dismiss(t)} className="flex-1 bg-stone-200 text-stone-700 text-xs font-bold py-2 rounded">Não</button>
+              <button onClick={() => toast.dismiss(t)} className="editorial-toast-prompt-cancel">Não</button>
             </div>
           </div>
         ), { duration: 15000 });
@@ -1979,24 +2077,26 @@ function PomodoroView({ tasks, setTasks, syncToFirestore }) {
   return (
     <div className="pomodoro-view max-w-xl mx-auto space-y-8">
       <div className="pomodoro-heading">
-        <span className="calendar-kicker">Focus session · 01</span>
+        <span className="calendar-kicker">Sessão de foco · 01</span>
         <h2>Temporizador de foco</h2>
         <p>Mantenha o foco e aumente sua produtividade.</p>
       </div>
 
       <div className="pomodoro-task-field space-y-3 text-left">
         <label className="habit-field-label">Tarefa em foco · opcional</label>
-        <select 
-          value={selectedTaskId} 
-          onChange={(e) => setSelectedTaskId(e.target.value)}
-          className="pomodoro-task-select"
-          disabled={isActive}
-        >
-          <option value="">Selecione uma tarefa em andamento...</option>
-          {activeTasks.map(t => (
-            <option key={t.id} value={t.id}>{t.title} ({t.status === 'em_curso' ? 'Em Curso' : 'A Fazer'})</option>
-          ))}
-        </select>
+        <div className="pomodoro-task-select-wrap">
+          <select
+            value={selectedTaskId}
+            onChange={(e) => setSelectedTaskId(e.target.value)}
+            className="pomodoro-task-select"
+            disabled={isActive}
+          >
+            <option value="">Selecione uma tarefa em andamento...</option>
+            {activeTasks.map(t => (
+              <option key={t.id} value={t.id}>{t.title} ({t.status === 'em_curso' ? 'Em Curso' : 'A Fazer'})</option>
+            ))}
+          </select>
+        </div>
       </div>
 
       <div className="pomodoro-clock relative overflow-hidden">
@@ -2004,7 +2104,7 @@ function PomodoroView({ tasks, setTasks, syncToFirestore }) {
         <div className="pomodoro-time">
           {formatTime(timeLeft)}
         </div>
-        <span className="pomodoro-clock-caption">25 min focus interval</span>
+        <span className="pomodoro-clock-caption">Intervalo de foco · 25 min</span>
       </div>
 
       <div className="pomodoro-actions flex justify-center space-x-4">
@@ -2033,6 +2133,7 @@ function TrashView({ tasks, setTasks, habits, setHabits, events, setEvents, note
   const deletedHabits = habits.filter(h => h.deleted);
   const deletedEvents = events.filter(e => e.deleted);
   const deletedNotes = notes.filter(n => n.deleted);
+  const totalDeleted = deletedTasks.length + deletedHabits.length + deletedEvents.length + deletedNotes.length;
 
   const handleRestore = (collection, setCollection, id, stateName) => {
     const updated = collection.map(item => item.id === id ? { ...item, deleted: false } : item);
@@ -2049,319 +2150,146 @@ function TrashView({ tasks, setTasks, habits, setHabits, events, setEvents, note
   };
 
   const isEmpty = deletedTasks.length === 0 && deletedHabits.length === 0 && deletedEvents.length === 0 && deletedNotes.length === 0;
+  const statusLabel = {
+    a_fazer: 'A fazer',
+    em_curso: 'Em curso',
+    concluido: 'Concluído'
+  };
+  const sections = [
+    {
+      key: 'tasks',
+      eyebrow: 'Tarefas excluídas',
+      label: 'Tarefas',
+      items: deletedTasks,
+      collection: tasks,
+      setCollection: setTasks,
+      stateName: 'tasks',
+      icon: CheckSquare,
+      tone: 'task',
+      renderTitle: (item) => item.title,
+      renderMeta: (item) => [item.category, statusLabel[item.status], item.dueDate].filter(Boolean).join(' · ')
+    },
+    {
+      key: 'habits',
+      eyebrow: 'Hábitos excluídos',
+      label: 'Hábitos',
+      items: deletedHabits,
+      collection: habits,
+      setCollection: setHabits,
+      stateName: 'habits',
+      icon: Flame,
+      tone: 'habit',
+      renderTitle: (item) => item.name,
+      renderMeta: (item) => item.frequency === 'specific' && item.days?.length
+        ? item.days.join(', ')
+        : item.frequency === 'once'
+          ? 'Apenas uma vez'
+          : 'Todos os dias'
+    },
+    {
+      key: 'events',
+      eyebrow: 'Eventos excluídos',
+      label: 'Eventos',
+      items: deletedEvents,
+      collection: events,
+      setCollection: setEvents,
+      stateName: 'events',
+      icon: CalendarIcon,
+      tone: 'event',
+      renderTitle: (item) => item.title,
+      renderMeta: (item) => [item.date, item.time, item.category].filter(Boolean).join(' · ')
+    },
+    {
+      key: 'notes',
+      eyebrow: 'Notas excluídas',
+      label: 'Notas',
+      items: deletedNotes,
+      collection: notes,
+      setCollection: setNotes,
+      stateName: 'notes',
+      icon: FileText,
+      tone: 'note',
+      renderTitle: (item) => item.title,
+      renderMeta: (item) => [item.category, item.content ? `${item.content.slice(0, 72)}${item.content.length > 72 ? '…' : ''}` : null].filter(Boolean).join(' · ')
+    }
+  ].filter(section => section.items.length > 0);
 
   return (
-    <div className="space-y-6">
-      <div className="flex items-center space-x-3 text-stone-800">
-        <Trash2 className="w-6 h-6 text-rose-500" />
-        <h2 className="text-2xl font-black">Lixeira</h2>
+    <div className="trash-page editorial-page">
+      <div className="trash-hero">
+        <div>
+          <p className="section-kicker">Arquivo temporário · 09</p>
+          <h2>Lixeira</h2>
+          <p className="trash-subtitle">
+            Itens removidos ficam separados aqui antes da exclusão definitiva.
+          </p>
+        </div>
+        <div className="trash-counter" aria-label={`${totalDeleted} itens na lixeira`}>
+          <span>{String(totalDeleted).padStart(2, '0')}</span>
+          <small>{totalDeleted === 1 ? 'item' : 'itens'}</small>
+        </div>
       </div>
       
       {isEmpty ? (
-        <div className="bg-white p-12 rounded-2xl text-center shadow-sm border border-stone-100">
-          <Trash2 className="w-12 h-12 text-stone-200 mx-auto mb-4" />
-          <h3 className="text-lg font-bold text-stone-800">Lixeira Vazia</h3>
-          <p className="text-stone-500">Tudo limpo por aqui.</p>
+        <div className="trash-empty">
+          <div className="trash-empty-mark">
+            <Trash2 className="w-6 h-6" />
+          </div>
+          <p className="section-kicker">Nenhum registro arquivado</p>
+          <h3>Lixeira vazia</h3>
+          <p>Tudo limpo por aqui. Quando algo for removido, aparecerá nesta área.</p>
         </div>
       ) : (
-        <div className="space-y-8">
-          {/* Tarefas Deletadas */}
-          {deletedTasks.length > 0 && (
-            <div className="space-y-3">
-              <h3 className="text-sm font-bold text-stone-500 uppercase tracking-wider">Tarefas Excluídas</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {deletedTasks.map(t => (
-                  <div key={t.id} className="bg-white p-4 rounded-lg shadow-sm border border-rose-100 flex justify-between items-start opacity-75">
-                    <div>
-                      <p className="font-semibold text-stone-800 line-through decoration-rose-300">{t.title}</p>
-                    </div>
-                    <div className="flex space-x-2">
-                      <button onClick={() => handleRestore(tasks, setTasks, t.id, 'tasks')} className="p-1.5 text-emerald-600 bg-emerald-50 rounded hover:bg-emerald-100"><RotateCcw className="w-4 h-4" /></button>
-                      <button onClick={() => handlePermanentDelete(tasks, setTasks, t.id, 'tasks')} className="p-1.5 text-rose-600 bg-rose-50 rounded hover:bg-rose-100"><X className="w-4 h-4" /></button>
-                    </div>
+        <div className="trash-sections">
+          {sections.map(section => {
+            const SectionIcon = section.icon;
+            return (
+              <section key={section.key} className="trash-section">
+                <div className="trash-section-header">
+                  <div className={`trash-section-icon trash-section-icon-${section.tone}`}>
+                    <SectionIcon className="w-4 h-4" />
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Hábitos Deletados */}
-          {deletedHabits.length > 0 && (
-            <div className="space-y-3">
-              <h3 className="text-sm font-bold text-stone-500 uppercase tracking-wider">Hábitos Excluídos</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {deletedHabits.map(h => (
-                  <div key={h.id} className="bg-white p-4 rounded-lg shadow-sm border border-rose-100 flex justify-between items-start opacity-75">
-                    <p className="font-semibold text-stone-800 line-through decoration-rose-300">{h.name}</p>
-                    <div className="flex space-x-2">
-                      <button onClick={() => handleRestore(habits, setHabits, h.id, 'habits')} className="p-1.5 text-emerald-600 bg-emerald-50 rounded hover:bg-emerald-100"><RotateCcw className="w-4 h-4" /></button>
-                      <button onClick={() => handlePermanentDelete(habits, setHabits, h.id, 'habits')} className="p-1.5 text-rose-600 bg-rose-50 rounded hover:bg-rose-100"><X className="w-4 h-4" /></button>
-                    </div>
+                  <div>
+                    <p>{section.eyebrow}</p>
+                    <span>{section.items.length} {section.items.length === 1 ? 'registro' : 'registros'}</span>
                   </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Eventos Deletados */}
-          {deletedEvents.length > 0 && (
-            <div className="space-y-3">
-              <h3 className="text-sm font-bold text-stone-500 uppercase tracking-wider">Eventos Excluídos</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {deletedEvents.map(e => (
-                  <div key={e.id} className="bg-white p-4 rounded-lg shadow-sm border border-rose-100 flex justify-between items-start opacity-75">
-                    <div>
-                      <p className="font-semibold text-stone-800 line-through decoration-rose-300">{e.title}</p>
-                      <span className="text-xs text-stone-500">{e.date}</span>
-                    </div>
-                    <div className="flex space-x-2">
-                      <button onClick={() => handleRestore(events, setEvents, e.id, 'events')} className="p-1.5 text-emerald-600 bg-emerald-50 rounded hover:bg-emerald-100"><RotateCcw className="w-4 h-4" /></button>
-                      <button onClick={() => handlePermanentDelete(events, setEvents, e.id, 'events')} className="p-1.5 text-rose-600 bg-rose-50 rounded hover:bg-rose-100"><X className="w-4 h-4" /></button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-
-          {/* Notas Deletadas */}
-          {deletedNotes.length > 0 && (
-            <div className="space-y-3">
-              <h3 className="text-sm font-bold text-stone-500 uppercase tracking-wider">Notas Excluídas</h3>
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                {deletedNotes.map(n => (
-                  <div key={n.id} className="bg-white p-4 rounded-lg shadow-sm border border-rose-100 flex justify-between items-start opacity-75">
-                    <div>
-                      <p className="font-semibold text-stone-800 line-through decoration-rose-300">{n.title}</p>
-                    </div>
-                    <div className="flex space-x-2">
-                      <button onClick={() => handleRestore(notes, setNotes, n.id, 'notes')} className="p-1.5 text-emerald-600 bg-emerald-50 rounded hover:bg-emerald-100"><RotateCcw className="w-4 h-4" /></button>
-                      <button onClick={() => handlePermanentDelete(notes, setNotes, n.id, 'notes')} className="p-1.5 text-rose-600 bg-rose-50 rounded hover:bg-rose-100"><X className="w-4 h-4" /></button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
-        </div>
-      )}
-    </div>
-  );
-}
-
-// ==========================================
-// 8. CHAT VIEW
-// ==========================================
-function ChatView({ currentUser }) {
-  const [recipientEmail, setRecipientEmail] = useState('');
-  const [activeChatId, setActiveChatId] = useState(null);
-  const [messages, setMessages] = useState([]);
-  const [newMessage, setNewMessage] = useState('');
-  const [chatsList, setChatsList] = useState([]);
-  const [isStartingNew, setIsStartingNew] = useState(false);
-  const messagesEndRef = React.useRef(null);
-
-  // Fetch list of chats
-  useEffect(() => {
-    if (!currentUser || !currentUser.email) return;
-    const q = query(
-      collection(db, 'chats'), 
-      where('participants', 'array-contains', currentUser.email),
-      orderBy('updatedAt', 'desc')
-    );
-    
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const fetchedChats = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setChatsList(fetchedChats);
-    });
-    
-    return () => unsubscribe();
-  }, [currentUser]);
-
-  const startChat = (e) => {
-    e.preventDefault();
-    if (!recipientEmail.trim() || !currentUser || !currentUser.email) return;
-    
-    const emails = [currentUser.email.toLowerCase().trim(), recipientEmail.toLowerCase().trim()].sort();
-    const chatId = emails.join('_');
-    setActiveChatId(chatId);
-    setRecipientEmail('');
-    setIsStartingNew(false);
-  };
-
-  useEffect(() => {
-    if (!activeChatId) return;
-
-    const messagesRef = collection(db, 'chats', activeChatId, 'messages');
-    const q = query(messagesRef, orderBy('createdAt', 'asc'));
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      const msgs = snapshot.docs.map(doc => ({ id: doc.id, ...doc.data() }));
-      setMessages(msgs);
-      setTimeout(() => {
-        messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
-      }, 100);
-    });
-
-    return () => unsubscribe();
-  }, [activeChatId]);
-
-  const sendMessage = async (e) => {
-    e.preventDefault();
-    if (!newMessage.trim() || !activeChatId) return;
-
-    const messagesRef = collection(db, 'chats', activeChatId, 'messages');
-    const chatDocRef = doc(db, 'chats', activeChatId);
-    
-    try {
-      // 1. Send the actual message
-      await addDoc(messagesRef, {
-        text: newMessage,
-        sender: currentUser.email,
-        createdAt: serverTimestamp()
-      });
-      
-      // 2. Update or create the parent document so it appears in the chat list
-      const emails = activeChatId.split('_');
-      await setDoc(chatDocRef, {
-        participants: emails,
-        lastMessage: newMessage,
-        updatedAt: serverTimestamp()
-      }, { merge: true });
-      
-      setNewMessage('');
-    } catch (error) {
-      console.error('Erro ao enviar mensagem:', error);
-    }
-  };
-
-  // Determine the name of the person we are talking to for the active chat header
-  const getRecipientFromChatId = (chatId) => {
-    if (!chatId || !currentUser || !currentUser.email) return '';
-    return chatId.split('_').find(e => e !== currentUser.email) || currentUser.email;
-  };
-
-  return (
-    <div className="max-w-3xl mx-auto bg-white rounded-xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] h-[600px] flex flex-col overflow-hidden border border-stone-100">
-      {!activeChatId ? (
-        <div className="flex-1 flex flex-col">
-          <div className="p-4 border-b border-stone-100 flex items-center justify-between bg-stone-50">
-            <h3 className="font-bold text-stone-800">Mensagens</h3>
-            <button 
-              onClick={() => setIsStartingNew(!isStartingNew)}
-              className="text-stone-500 hover:text-stone-900 transition-colors p-2 rounded-md hover:bg-stone-200"
-            >
-              {isStartingNew ? <X className="w-5 h-5" /> : <Plus className="w-5 h-5" />}
-            </button>
-          </div>
-          
-          {isStartingNew && (
-            <div className="p-4 border-b border-stone-100 bg-white">
-              <form onSubmit={startChat} className="flex space-x-2">
-                <input 
-                  type="email" 
-                  placeholder="E-mail da pessoa..." 
-                  value={recipientEmail}
-                  onChange={(e) => setRecipientEmail(e.target.value)}
-                  className="flex-1 px-4 py-2 bg-stone-50 border-0 rounded-lg focus:ring-2 focus:ring-stone-200 text-sm focus:outline-none"
-                  required
-                />
-                <button type="submit" className="px-4 py-2 bg-stone-900 text-white font-bold rounded-lg hover:bg-stone-800 transition-colors text-sm">
-                  Iniciar
-                </button>
-              </form>
-            </div>
-          )}
-
-          <div className="flex-1 overflow-y-auto">
-            {chatsList.length === 0 ? (
-              <div className="h-full flex flex-col items-center justify-center p-8 space-y-4 text-center">
-                <MessageCircle className="w-12 h-12 text-stone-300" />
-                <p className="text-stone-500 text-sm">Você ainda não tem conversas ativas.</p>
-                <button 
-                  onClick={() => setIsStartingNew(true)}
-                  className="text-sm font-bold text-stone-800 hover:underline"
-                >
-                  Iniciar uma nova conversa
-                </button>
-              </div>
-            ) : (
-              <ul className="divide-y divide-stone-100">
-                {chatsList.map(chat => {
-                  const partnerEmail = chat.participants.find(e => e !== currentUser.email) || currentUser.email;
-                  return (
-                    <li key={chat.id}>
-                      <button 
-                        onClick={() => setActiveChatId(chat.id)}
-                        className="w-full flex items-center p-4 hover:bg-stone-50 transition-colors text-left"
-                      >
-                        <div className="w-12 h-12 rounded-full bg-stone-200 flex items-center justify-center text-stone-600 font-bold uppercase shrink-0">
-                          {partnerEmail.charAt(0)}
-                        </div>
-                        <div className="ml-4 flex-1 overflow-hidden">
-                          <p className="font-bold text-stone-800 truncate">{partnerEmail}</p>
-                          <p className="text-sm text-stone-500 truncate">{chat.lastMessage || 'Nenhuma mensagem'}</p>
-                        </div>
-                      </button>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
-        </div>
-      ) : (
-        <>
-          <div className="p-4 border-b border-stone-100 flex items-center justify-between bg-stone-50">
-            <div className="flex items-center space-x-3">
-              <button onClick={() => { setActiveChatId(null); setMessages([]); }} className="p-2 text-stone-400 hover:text-stone-600 hover:bg-stone-200 rounded-lg transition-colors">
-                <ChevronLeft className="w-5 h-5" />
-              </button>
-              <div className="flex items-center space-x-3 ml-2">
-                <div className="w-10 h-10 rounded-full bg-stone-200 flex items-center justify-center text-stone-600 font-bold uppercase">
-                  {getRecipientFromChatId(activeChatId).charAt(0)}
                 </div>
-                <div>
-                  <p className="font-bold text-stone-800 text-sm">{getRecipientFromChatId(activeChatId)}</p>
-                  <p className="text-xs text-stone-400 font-medium tracking-wider">MENSAGEM PRIVADA</p>
-                </div>
-              </div>
-            </div>
-          </div>
-          
-          <div className="flex-1 overflow-y-auto p-4 space-y-4 bg-[#FAF9F6]">
-            {messages.length === 0 ? (
-              <div className="h-full flex items-center justify-center text-stone-400 text-sm font-medium">
-                Nenhuma mensagem ainda. Dê um oi! 👋
-              </div>
-            ) : (
-              messages.map(msg => {
-                const isMine = msg.sender === currentUser.email;
-                return (
-                  <div key={msg.id} className={`flex ${isMine ? 'justify-end' : 'justify-start'}`}>
-                    <div className={`max-w-[75%] px-4 py-2.5 text-sm ${isMine ? 'bg-stone-900 text-white rounded-2xl rounded-tr-sm shadow-sm' : 'bg-white text-stone-800 border border-stone-100 rounded-2xl rounded-tl-sm shadow-sm'}`}>
-                      <p>{msg.text}</p>
-                    </div>
-                  </div>
-                );
-              })
-            )}
-            <div ref={messagesEndRef} />
-          </div>
 
-          <form onSubmit={sendMessage} className="p-4 bg-white border-t border-stone-100 flex items-center space-x-2">
-            <input 
-              type="text" 
-              placeholder="Sua mensagem..." 
-              value={newMessage}
-              onChange={(e) => setNewMessage(e.target.value)}
-              className="flex-1 px-4 py-3 bg-stone-50 border-0 rounded-full focus:ring-2 focus:ring-stone-200 text-sm focus:outline-none"
-            />
-            <button type="submit" className="p-3 bg-stone-900 text-white rounded-full hover:bg-stone-800 transition-colors shadow-sm" disabled={!newMessage.trim()}>
-              <Send className="w-5 h-5" />
-            </button>
-          </form>
-        </>
+                <div className="trash-records">
+                  {section.items.map(item => (
+                    <article key={item.id} className={`trash-record trash-record-${section.tone}`}>
+                      <div className="trash-record-body">
+                        <span className="trash-record-type">{section.label}</span>
+                        <h3>{section.renderTitle(item)}</h3>
+                        {section.renderMeta(item) && <p>{section.renderMeta(item)}</p>}
+                      </div>
+                      <div className="trash-record-actions">
+                        <button
+                          type="button"
+                          onClick={() => handleRestore(section.collection, section.setCollection, item.id, section.stateName)}
+                          className="trash-action trash-action-restore"
+                          aria-label={`Restaurar ${section.renderTitle(item)}`}
+                        >
+                          <RotateCcw className="w-4 h-4" />
+                          <span>Restaurar</span>
+                        </button>
+                        <button
+                          type="button"
+                          onClick={() => handlePermanentDelete(section.collection, section.setCollection, item.id, section.stateName)}
+                          className="trash-action trash-action-delete"
+                          aria-label={`Excluir definitivamente ${section.renderTitle(item)}`}
+                        >
+                          <X className="w-4 h-4" />
+                          <span>Excluir</span>
+                        </button>
+                      </div>
+                    </article>
+                  ))}
+                </div>
+              </section>
+            );
+          })}
+        </div>
       )}
     </div>
   );
