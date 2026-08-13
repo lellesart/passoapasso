@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useState, useEffect, useMemo } from 'react';
+import React, { lazy, Suspense, useRef, useState, useEffect, useMemo } from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { auth, googleProvider, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, db, doc, setDoc, onSnapshot, updateDoc } from './firebase/config';
 import { addEventToGoogleCalendar, deleteEventFromGoogleCalendar } from './firebase/calendarAPI';
@@ -37,7 +37,7 @@ import {
   Loader2
 } from 'lucide-react';
 
-import { motion, AnimatePresence } from 'framer-motion';
+import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { Toaster, toast } from 'sonner';
 
 const loadSecondaryViews = () => import('./components/SecondaryViews');
@@ -262,6 +262,8 @@ function ViewLoading() {
 }
 
 export default function App() {
+  const prefersReducedMotion = useReducedMotion();
+  const appMainRef = useRef(null);
   const [activeTab, setActiveTab] = useState(() => {
     if (typeof window !== 'undefined') {
       const hash = window.location.hash.replace('#', '');
@@ -296,6 +298,17 @@ export default function App() {
     window.addEventListener('popstate', handlePopState);
     return () => window.removeEventListener('popstate', handlePopState);
   }, []);
+
+  useEffect(() => {
+    const animationFrame = window.requestAnimationFrame(() => {
+      appMainRef.current?.scrollTo({
+        top: 0,
+        behavior: prefersReducedMotion ? 'auto' : 'smooth'
+      });
+    });
+
+    return () => window.cancelAnimationFrame(animationFrame);
+  }, [activeTab, prefersReducedMotion]);
 
   // Authentication State
   const [user, setUser] = useState(null);
@@ -686,15 +699,21 @@ export default function App() {
 
       {/* Conteúdo Principal */}
       <div className="app-content min-w-0">
-        <main className="app-main">
-          <AnimatePresence mode="wait">
-            <motion.div 
+        <main ref={appMainRef} className="app-main">
+          <AnimatePresence initial={false} mode="popLayout">
+            <motion.div
               key={activeTab}
-              initial={{ opacity: 0, y: 15 }}
+              initial={prefersReducedMotion ? false : { opacity: 0, y: 6 }}
               animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -15 }}
-              transition={{ duration: 0.3, ease: "easeInOut" }}
-              className="editorial-view max-w-5xl mx-auto space-y-8"
+              exit={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, y: -3 }}
+              transition={prefersReducedMotion
+                ? { duration: 0.01 }
+                : {
+                    duration: 0.42,
+                    ease: [0.22, 1, 0.36, 1],
+                    opacity: { duration: 0.28, ease: 'easeOut' }
+                  }}
+              className="editorial-view page-transition max-w-5xl mx-auto space-y-8"
             >
               <Suspense fallback={<ViewLoading />}>
                 {activeTab === 'dashboard' && (
