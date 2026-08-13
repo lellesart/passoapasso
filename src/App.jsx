@@ -68,10 +68,10 @@ export function cn(...inputs) {
   return twMerge(clsx(inputs));
 }
 
-// Injeção das Fontes Inter e DM Sans via Google Fonts
+// Tipografia editorial: serif para títulos e sans para a interface.
 if (typeof document !== 'undefined') {
   const link = document.createElement('link');
-  link.href = 'https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=DM+Sans:wght@400;500;700;800;900&display=swap';
+  link.href = 'https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=IBM+Plex+Mono:wght@400;500;600&family=Newsreader:opsz,wght@6..72,400;6..72,500;6..72,600;6..72,700&display=swap';
   link.rel = 'stylesheet';
   document.head.appendChild(link);
 }
@@ -470,9 +470,9 @@ export default function App() {
 
   if (!user) {
     return (
-      <div className="min-h-screen bg-stone-50 flex flex-col items-center justify-center p-4">
-        <div className="bg-white p-8 rounded-3xl shadow-[0_20px_50px_rgb(0,0,0,0.06)] max-w-md w-full space-y-8 text-center border border-stone-100/50">
-          <div className="w-20 h-20 bg-emerald-50 rounded-2xl flex items-center justify-center mx-auto mb-2 shadow-sm border border-emerald-100/50">
+      <div className="login-screen min-h-screen bg-stone-50 flex flex-col items-center justify-center p-4">
+        <div className="login-card bg-white p-8 rounded-3xl shadow-[0_20px_50px_rgb(0,0,0,0.06)] max-w-md w-full space-y-8 text-center border border-stone-100/50">
+          <div className="login-mark w-20 h-20 bg-emerald-50 rounded-2xl flex items-center justify-center mx-auto mb-2 shadow-sm border border-emerald-100/50">
             <CheckSquare className="w-10 h-10 text-emerald-600" />
           </div>
           <div className="space-y-3">
@@ -502,16 +502,15 @@ export default function App() {
   }
 
   return (
-    <div className="flex h-screen bg-[#FAF9F6] text-stone-800 font-sans overflow-hidden antialiased relative" style={{ fontFamily: "'Inter', sans-serif" }}>
+    <div className="app-shell text-stone-800 font-sans antialiased relative">
       <Toaster position="top-right" richColors />
-      
-      {/* BOTÃO FLUTUANTE ISOLADO NO CANTO SUPERIOR DIREITO */}
+
       <button
         onClick={() => setMobileMenuOpen(true)}
-        className="fixed top-5 right-5 z-40 bg-white/95 backdrop-blur-md p-2.5 rounded-lg shadow-md border border-stone-200/80 text-stone-800 hover:bg-white active:scale-95 transition-all flex items-center justify-center"
+        className="app-menu-button app-menu-trigger"
         aria-label="Abrir Menu"
       >
-        <Menu className="w-5 h-5 text-stone-800" />
+        <Menu className="w-5 h-5" />
       </button>
 
       {/* O Toast agora é gerenciado globalmente pelo Sonner (<Toaster />) */}
@@ -532,7 +531,7 @@ export default function App() {
               animate={{ x: 0 }}
               exit={{ x: "100%" }}
               transition={{ type: "spring", damping: 25, stiffness: 300 }}
-              className="fixed top-0 right-0 z-50 h-screen p-4 overflow-y-auto bg-white w-80 shadow-2xl flex flex-col justify-between"
+              className="menu-drawer fixed top-0 right-0 z-50 h-screen p-4 overflow-y-auto bg-white w-80 shadow-2xl flex flex-col justify-between"
             >
               <div>
                 <div className="border-b border-stone-100 pb-4 flex items-center justify-between">
@@ -613,8 +612,8 @@ export default function App() {
       </AnimatePresence>
 
       {/* Conteúdo Principal */}
-      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
-        <main className="flex-1 overflow-y-auto p-4 sm:p-6 lg:p-8 pt-20">
+      <div className="app-content min-w-0">
+        <main className="app-main">
           <AnimatePresence mode="wait">
             <motion.div 
               key={activeTab}
@@ -622,7 +621,7 @@ export default function App() {
               animate={{ opacity: 1, y: 0 }}
               exit={{ opacity: 0, y: -15 }}
               transition={{ duration: 0.3, ease: "easeInOut" }}
-              className="max-w-5xl mx-auto space-y-8"
+              className="editorial-view max-w-5xl mx-auto space-y-8"
             >
               {activeTab === 'dashboard' && (
                 <DashboardView 
@@ -753,7 +752,7 @@ function WeeklyCalendarPreview({ events }) {
   const todayEvents = events.filter(e => e.date === todayStr && !e.deleted);
 
   return (
-    <div className="bg-white p-4 sm:p-5 rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] space-y-3">
+    <div className="editorial-panel bg-white p-4 sm:p-5 rounded-2xl shadow-[0_8px_30px_rgb(0,0,0,0.04)] space-y-3">
       {/* Linha dos dias */}
       <div className="flex justify-between items-center overflow-x-auto gap-2 scrollbar-hide pb-1">
         {nextDays.map((date, i) => {
@@ -813,6 +812,33 @@ function WeeklyCalendarPreview({ events }) {
 // ==========================================
 // 1. VISTA DO PAINEL PRINCIPAL (DASHBOARD NOTION)
 // ==========================================
+function TaskNoteContent({ task, onToggle, onDelete, completed = false }) {
+  return (
+    <div className="task-note-layout">
+      <button
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={onToggle}
+        className="task-check"
+        aria-label={completed ? 'Reabrir tarefa' : 'Concluir tarefa'}
+      >
+        {completed ? <CheckCircle2 className="w-5 h-5" /> : <Circle className="w-5 h-5" />}
+      </button>
+      <div className="task-note-copy">
+        <span className="task-note-category">{task.category}</span>
+        <p className={`task-note-title ${completed ? 'task-note-title-complete' : ''}`}>{task.title}</p>
+      </div>
+      <button
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={onDelete}
+        className="task-delete"
+        aria-label="Mover tarefa para a lixeira"
+      >
+        <Trash2 className="w-4 h-4" />
+      </button>
+    </div>
+  );
+}
+
 function DashboardView({ 
   tasks, 
   setTasks, 
@@ -827,6 +853,7 @@ function DashboardView({
 }) {
   // Estado para controlar a visibilidade do Drawer de escrita de nota
   const [isNoteDrawerOpen, setIsNoteDrawerOpen] = useState(false);
+  const [selectedNote, setSelectedNote] = useState(null);
   
   // Estados para os campos da nova nota
   const [newNoteTitle, setNewNoteTitle] = useState('');
@@ -910,19 +937,19 @@ function DashboardView({
   const habitsProgressPct = habits.length > 0 ? Math.round((completedHabitsCount / habits.length) * 100) : 0;
 
   return (
-    <div className="space-y-8">
+    <div className="editorial-page space-y-8">
       
       {/* 1. TEXTO DE BOAS-VINDAS E CLIMA NO MESMO ALINHAMENTO */}
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 pb-2">
         <div>
           <h1 
-            className="text-4xl sm:text-5xl text-stone-900 tracking-tight leading-tight"
+            className="page-title"
             style={{ fontWeight: 900 }}
           >
             Passo a Passo
           </h1>
           <h2 
-            className="text-2xl sm:text-3xl text-stone-700 mt-1 tracking-tight"
+            className="page-subtitle"
             style={{ fontWeight: 700 }}
           >
             Um passo de cada vez.
@@ -935,13 +962,14 @@ function DashboardView({
       <WeeklyCalendarPreview events={events} />
 
       {/* 3. SEÇÃO DE HÁBITOS DIÁRIOS (COLOCADA ACIMA DA LISTA DE TAREFAS) */}
-      <div className="bg-white p-6 sm:p-8 rounded-lg shadow-[0_8px_30px_rgb(0,0,0,0.04)] space-y-4">
+      <div className="editorial-panel bg-white p-6 sm:p-8 rounded-lg shadow-[0_8px_30px_rgb(0,0,0,0.04)] space-y-4">
         <div className="flex items-center justify-between mb-6">
           <div className="flex items-center space-x-2">
             <h2 className="font-bold text-2xl text-stone-900">Rastreador de Hábitos</h2>
           </div>
-          <button onClick={() => setActiveTab('habits')} className="text-xs font-bold text-stone-400 hover:text-stone-900 transition-colors uppercase tracking-wider">
-            Gerenciar
+          <button onClick={() => setActiveTab('habits')} className="habit-manage-button">
+            <span>Gerenciar</span>
+            <ChevronRight className="w-3 h-3" />
           </button>
         </div>
 
@@ -993,17 +1021,17 @@ function DashboardView({
       </div>
 
       {/* 4. LISTA DE TAREFAS (QUADRO HORIZONTAL) */}
-      <div className="bg-white p-6 sm:p-8 rounded-lg shadow-[0_8px_30px_rgb(0,0,0,0.04)] space-y-4">
+      <div className="editorial-panel bg-white p-6 sm:p-8 rounded-lg shadow-[0_8px_30px_rgb(0,0,0,0.04)] space-y-4">
         <div className="flex items-center justify-between mb-4">
           <h3 className="font-bold text-stone-900 text-2xl">Lista de tarefas</h3>
           <span className="text-xs text-stone-400 font-medium md:hidden">Deslize para o lado →</span>
         </div>
 
         <DragDropContext onDragEnd={onDragEnd}>
-          <div className="flex md:grid md:grid-cols-3 gap-4 overflow-x-auto md:overflow-x-visible pb-4 pt-1 snap-x md:snap-none scrollbar-thin">
+          <div className="task-board-columns flex md:grid md:grid-cols-3 gap-4 overflow-x-auto md:overflow-x-visible pb-4 pt-1 snap-x md:snap-none scrollbar-thin">
             
             {/* Coluna A Fazer */}
-            <div className="min-w-[280px] sm:min-w-[320px] md:min-w-0 bg-stone-100/80 p-4 rounded-lg shadow-[0_8px_30px_rgb(0,0,0,0.04)] space-y-3 snap-start shrink-0 flex flex-col max-h-[500px]">
+            <div className="task-lane min-w-[280px] sm:min-w-[320px] md:min-w-0 bg-stone-100/80 p-4 rounded-lg shadow-[0_8px_30px_rgb(0,0,0,0.04)] space-y-3 snap-start shrink-0 flex flex-col max-h-[500px]">
               <div className="flex items-center justify-between border-b border-stone-200 pb-2">
                 <span className="font-bold text-xs uppercase tracking-wider text-stone-700 flex items-center space-x-1.5">
                   <span className="w-2 h-2 rounded-full bg-stone-400"></span>
@@ -1034,29 +1062,18 @@ function DashboardView({
                                 ...provided.draggableProps.style,
                                 transitionDuration: snapshot.isDropAnimating ? '0.1s' : provided.draggableProps.style?.transitionDuration,
                               }}
-                              className={`p-3.5 rounded-md shadow-[0_8px_30px_rgb(0,0,0,0.04)] space-y-2 group ${style.bg} ${snapshot.isDragging ? 'shadow-xl opacity-90' : ''}`}
+                              className={`task-note group ${style.bg} ${snapshot.isDragging ? 'is-dragging' : ''}`}
                             >
-                              <div className="flex justify-between items-start">
-                                <span className="text-xs font-bold text-stone-800">{t.category}</span>
-                                <div className="flex space-x-1">
-                                  <button onPointerDown={(e) => e.stopPropagation()} onClick={() => toggleTaskStatus(t.id)} className="text-stone-400 hover:text-emerald-600 opacity-40 group-hover:opacity-100 transition-opacity">
-                                    <Circle className="w-4 h-4" />
-                                  </button>
-                                  <button 
-                                    onPointerDown={(e) => e.stopPropagation()} 
-                                    onClick={() => {
-                                      const updatedTasks = tasks.map(task => task.id === t.id ? { ...task, deleted: true } : task);
-                                      setTasks(updatedTasks);
-                                      if(syncToFirestore) syncToFirestore('tasks', updatedTasks);
-                                      toast.success('Tarefa movida para a Lixeira');
-                                    }}
-                                    className="text-stone-400 hover:text-rose-500 opacity-40 group-hover:opacity-100 transition-opacity"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
-                                </div>
-                              </div>
-                              <p className="font-semibold text-sm text-stone-900">{t.title}</p>
+                              <TaskNoteContent
+                                task={t}
+                                onToggle={() => toggleTaskStatus(t.id)}
+                                onDelete={() => {
+                                  const updatedTasks = tasks.map(task => task.id === t.id ? { ...task, deleted: true } : task);
+                                  setTasks(updatedTasks);
+                                  if(syncToFirestore) syncToFirestore('tasks', updatedTasks);
+                                  toast.success('Tarefa movida para a Lixeira');
+                                }}
+                              />
                             </div>
                           )}
                         </Draggable>
@@ -1069,7 +1086,7 @@ function DashboardView({
             </div>
 
             {/* Coluna Em Curso */}
-            <div className="min-w-[280px] sm:min-w-[320px] md:min-w-0 bg-stone-100/80 p-4 rounded-lg shadow-[0_8px_30px_rgb(0,0,0,0.04)] space-y-3 snap-start shrink-0 flex flex-col max-h-[500px]">
+            <div className="task-lane min-w-[280px] sm:min-w-[320px] md:min-w-0 bg-stone-100/80 p-4 rounded-lg shadow-[0_8px_30px_rgb(0,0,0,0.04)] space-y-3 snap-start shrink-0 flex flex-col max-h-[500px]">
               <div className="flex items-center justify-between border-b border-stone-200 pb-2">
                 <span className="font-bold text-xs uppercase tracking-wider text-amber-800 flex items-center space-x-1.5">
                   <span className="w-2 h-2 rounded-full bg-amber-500"></span>
@@ -1100,29 +1117,18 @@ function DashboardView({
                                 ...provided.draggableProps.style,
                                 transitionDuration: snapshot.isDropAnimating ? '0.1s' : provided.draggableProps.style?.transitionDuration,
                               }}
-                              className={`p-3.5 rounded-md shadow-[0_8px_30px_rgb(0,0,0,0.04)] space-y-2 group ${style.bg} ${snapshot.isDragging ? 'shadow-xl opacity-90' : ''}`}
+                              className={`task-note group ${style.bg} ${snapshot.isDragging ? 'is-dragging' : ''}`}
                             >
-                              <div className="flex justify-between items-start">
-                                <span className="text-xs font-bold text-stone-800">{t.category}</span>
-                                <div className="flex space-x-1">
-                                  <button onPointerDown={(e) => e.stopPropagation()} onClick={() => toggleTaskStatus(t.id)} className="text-stone-400 hover:text-emerald-600 opacity-40 group-hover:opacity-100 transition-opacity">
-                                    <Circle className="w-4 h-4" />
-                                  </button>
-                                  <button 
-                                    onPointerDown={(e) => e.stopPropagation()} 
-                                    onClick={() => {
-                                      const updatedTasks = tasks.map(task => task.id === t.id ? { ...task, deleted: true } : task);
-                                      setTasks(updatedTasks);
-                                      if(syncToFirestore) syncToFirestore('tasks', updatedTasks);
-                                      toast.success('Tarefa movida para a Lixeira');
-                                    }}
-                                    className="text-stone-400 hover:text-rose-500 opacity-40 group-hover:opacity-100 transition-opacity"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
-                                </div>
-                              </div>
-                              <p className="font-semibold text-sm text-stone-900">{t.title}</p>
+                              <TaskNoteContent
+                                task={t}
+                                onToggle={() => toggleTaskStatus(t.id)}
+                                onDelete={() => {
+                                  const updatedTasks = tasks.map(task => task.id === t.id ? { ...task, deleted: true } : task);
+                                  setTasks(updatedTasks);
+                                  if(syncToFirestore) syncToFirestore('tasks', updatedTasks);
+                                  toast.success('Tarefa movida para a Lixeira');
+                                }}
+                              />
                             </div>
                           )}
                         </Draggable>
@@ -1135,7 +1141,7 @@ function DashboardView({
             </div>
 
             {/* Coluna Concluído */}
-            <div className="min-w-[280px] sm:min-w-[320px] md:min-w-0 bg-stone-100/80 p-4 rounded-lg shadow-[0_8px_30px_rgb(0,0,0,0.04)] space-y-3 snap-start shrink-0 flex flex-col max-h-[500px]">
+            <div className="task-lane min-w-[280px] sm:min-w-[320px] md:min-w-0 bg-stone-100/80 p-4 rounded-lg shadow-[0_8px_30px_rgb(0,0,0,0.04)] space-y-3 snap-start shrink-0 flex flex-col max-h-[500px]">
               <div className="flex items-center justify-between border-b border-stone-200 pb-2">
                 <span className="font-bold text-xs uppercase tracking-wider text-emerald-800 flex items-center space-x-1.5">
                   <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
@@ -1166,29 +1172,19 @@ function DashboardView({
                                 ...provided.draggableProps.style,
                                 transitionDuration: snapshot.isDropAnimating ? '0.1s' : provided.draggableProps.style?.transitionDuration,
                               }}
-                              className={`p-3.5 rounded-md shadow-[0_8px_30px_rgb(0,0,0,0.04)] space-y-2 opacity-80 group ${style.bg} ${snapshot.isDragging ? 'shadow-xl opacity-100 z-50' : ''}`}
+                              className={`task-note task-note-complete group ${style.bg} ${snapshot.isDragging ? 'is-dragging' : ''}`}
                             >
-                              <div className="flex justify-between items-start">
-                                <span className="text-xs font-bold text-stone-800">{t.category}</span>
-                                <div className="flex space-x-1">
-                                  <button onPointerDown={(e) => e.stopPropagation()} onClick={() => toggleTaskStatus(t.id)} className="text-emerald-700 hover:text-stone-400 transition-colors">
-                                    <CheckCircle2 className="w-4 h-4" />
-                                  </button>
-                                  <button 
-                                    onPointerDown={(e) => e.stopPropagation()} 
-                                    onClick={() => {
-                                      const updatedTasks = tasks.map(task => task.id === t.id ? { ...task, deleted: true } : task);
-                                      setTasks(updatedTasks);
-                                      if(syncToFirestore) syncToFirestore('tasks', updatedTasks);
-                                      toast.success('Tarefa movida para a Lixeira');
-                                    }}
-                                    className="text-stone-400 hover:text-rose-500 opacity-40 group-hover:opacity-100 transition-opacity"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </button>
-                                </div>
-                              </div>
-                              <p className="font-semibold text-sm text-stone-900 line-through">{t.title}</p>
+                              <TaskNoteContent
+                                task={t}
+                                completed
+                                onToggle={() => toggleTaskStatus(t.id)}
+                                onDelete={() => {
+                                  const updatedTasks = tasks.map(task => task.id === t.id ? { ...task, deleted: true } : task);
+                                  setTasks(updatedTasks);
+                                  if(syncToFirestore) syncToFirestore('tasks', updatedTasks);
+                                  toast.success('Tarefa movida para a Lixeira');
+                                }}
+                              />
                             </div>
                           )}
                         </Draggable>
@@ -1206,7 +1202,7 @@ function DashboardView({
 
 
       {/* 6. CARD APENAS COM NOTAS GUARDADAS E BOTÃO "ESCREVER NOTAS" ABAIXO */}
-      <div className="bg-white p-6 rounded-lg shadow-[0_8px_30px_rgb(0,0,0,0.04)] space-y-4">
+      <div className="editorial-panel bg-white p-6 rounded-lg shadow-[0_8px_30px_rgb(0,0,0,0.04)] space-y-4">
         <div className="flex items-center justify-between border-b border-stone-100 pb-5 mb-2">
           <h3 className="font-bold text-stone-900 text-2xl flex items-center space-x-2">
             <span>Notas</span>
@@ -1221,11 +1217,17 @@ function DashboardView({
             {notes.filter(n => !n.deleted).map((note) => {
               const style = getCategoryStyle(note.category);
               return (
-                <div key={note.id} className={`p-4 rounded-md shadow-xs ${style.bg} space-y-1`}>
-                  <span className="text-xs font-bold text-stone-800">{note.category}</span>
+                <button
+                  key={note.id}
+                  type="button"
+                  onClick={() => setSelectedNote(note)}
+                  className={`note-preview-card ${style.bg}`}
+                >
+                  <span className="note-preview-category">{note.category}</span>
+                  <span className="note-preview-open"><span>Ver nota</span><ChevronRight className="w-3 h-3" /></span>
                   <h5 className="font-bold text-stone-900 text-sm">{note.title}</h5>
                   <p className="text-xs text-stone-800 leading-relaxed whitespace-pre-line">{note.content}</p>
-                </div>
+                </button>
               );
             })}
           </div>
@@ -1244,32 +1246,67 @@ function DashboardView({
         </div>
       </div>
 
+      {selectedNote && (
+        <div className="note-viewer-overlay fixed inset-0 z-50 flex items-center justify-center p-5 sm:p-8">
+          <div
+            className="note-viewer-backdrop fixed inset-0"
+            onClick={() => setSelectedNote(null)}
+          ></div>
+
+          <article className="note-viewer relative z-10" role="dialog" aria-modal="true" aria-labelledby="note-viewer-title">
+            <header className="note-viewer-header flex items-start justify-between">
+              <div>
+                <span className="note-drawer-kicker">Nota arquivada · {selectedNote.category}</span>
+                <h2 id="note-viewer-title" className="note-viewer-title">{selectedNote.title}</h2>
+              </div>
+              <button
+                type="button"
+                onClick={() => setSelectedNote(null)}
+                className="note-drawer-close"
+                aria-label="Fechar visualização da nota"
+              >
+                <X className="w-5 h-5" />
+              </button>
+            </header>
+            <div className="editorial-rule"></div>
+            <div className="note-viewer-content">
+              {selectedNote.content || 'Esta nota ainda não possui conteúdo.'}
+            </div>
+            <footer className="note-viewer-footer">Passo a passo · registro pessoal</footer>
+          </article>
+        </div>
+      )}
+
       {/* 7. DRAWER LATERAL DIREITO PARA DIGITAR NOTAS */}
       {isNoteDrawerOpen && (
-        <div className="fixed inset-0 z-50 flex justify-end">
+        <div className="note-drawer-overlay fixed inset-0 z-50 flex justify-end">
           <div 
-            className="fixed inset-0 bg-stone-900/30 backdrop-blur-xs transition-opacity" 
+            className="note-drawer-backdrop fixed inset-0 transition-opacity"
             onClick={() => setIsNoteDrawerOpen(false)}
           ></div>
 
-          <div className="relative w-full max-w-md bg-white h-full shadow-2xl z-10 flex flex-col justify-between p-6 overflow-y-auto">
-            <div className="space-y-6">
-              <div className="flex items-center justify-between border-b border-stone-200 pb-4">
-                <div className="flex items-center space-x-2">
-                  <FileText className="w-5 h-5 text-stone-900" />
-                  <h3 className="font-black text-lg text-stone-900">Escrever Nota</h3>
+          <div className="note-drawer relative w-full max-w-md bg-white h-full z-10 flex flex-col justify-between overflow-y-auto">
+            <div className="note-drawer-body">
+              <div className="note-drawer-header flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                  <FileText className="w-5 h-5 text-teal-800" />
+                  <div>
+                    <span className="note-drawer-kicker">Novo registro</span>
+                    <h3 className="note-drawer-title">Escrever nota</h3>
+                  </div>
                 </div>
                 <button 
                   onClick={() => setIsNoteDrawerOpen(false)} 
-                  className="p-1.5 rounded-md text-stone-400 hover:text-stone-700 hover:bg-stone-100 transition-colors"
+                  className="note-drawer-close"
+                  aria-label="Fechar nota"
                 >
                   <X className="w-5 h-5" />
                 </button>
               </div>
 
-              <form id="note-drawer-form" onSubmit={handleSaveNote} className="space-y-4">
-                <div>
-                  <label className="block text-xs font-bold text-stone-700 uppercase mb-1">
+              <form id="note-drawer-form" onSubmit={handleSaveNote} className="note-drawer-form">
+                <div className="note-field">
+                  <label className="note-label">
                     Título da Nota
                   </label>
                   <input 
@@ -1277,54 +1314,58 @@ function DashboardView({
                     placeholder="Digite o título..." 
                     value={newNoteTitle}
                     onChange={(e) => setNewNoteTitle(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-md border border-stone-300 bg-stone-50 text-sm font-medium focus:outline-none focus:ring-2 focus:ring-stone-400"
+                    className="note-input"
                     autoFocus
                   />
                 </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-stone-700 uppercase mb-1">
+                <div className="note-field">
+                  <label className="note-label">
                     Categoria
                   </label>
-                  <select
-                    value={newNoteCategory}
-                    onChange={(e) => setNewNoteCategory(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-md border border-stone-300 bg-stone-50 text-sm font-semibold text-stone-700 focus:outline-none"
-                  >
-                    <option value="Trabalho">Trabalho</option>
-                    <option value="Pessoal">Pessoal</option>
-                    <option value="Saúde">Saúde</option>
-                    <option value="Estudos">Estudos</option>
-                  </select>
+                  <div className="note-category-list" role="group" aria-label="Categoria da nota">
+                    {availableCategories.map((category) => (
+                      <button
+                        key={category}
+                        type="button"
+                        onClick={() => setNewNoteCategory(category)}
+                        className={`note-category-option ${newNoteCategory === category ? 'is-selected' : ''}`}
+                        aria-pressed={newNoteCategory === category}
+                      >
+                        <span className="note-category-dot" />
+                        {category}
+                      </button>
+                    ))}
+                  </div>
                 </div>
 
-                <div>
-                  <label className="block text-xs font-bold text-stone-700 uppercase mb-1">
+                <div className="note-field note-content-field">
+                  <label className="note-label">
                     Conteúdo
                   </label>
                   <textarea
                     placeholder="Escreva as tuas notas ou detalhes aqui..."
-                    rows="8"
+                    rows="10"
                     value={newNoteContent}
                     onChange={(e) => setNewNoteContent(e.target.value)}
-                    className="w-full px-3.5 py-2.5 rounded-md border border-stone-300 bg-stone-50 text-sm focus:outline-none focus:ring-2 focus:ring-stone-400 leading-relaxed resize-none"
+                    className="note-textarea"
                   ></textarea>
                 </div>
               </form>
             </div>
 
-            <div className="pt-4 border-t border-stone-200 flex items-center justify-end space-x-3 mt-6">
+            <div className="note-drawer-actions flex items-center justify-end gap-3">
               <button
                 type="button"
                 onClick={() => setIsNoteDrawerOpen(false)}
-                className="px-4 py-2 bg-stone-100 hover:bg-stone-200 text-stone-700 font-semibold rounded-md text-sm transition-colors"
+                className="note-cancel-button"
               >
                 Cancelar
               </button>
               <button
                 type="submit"
                 form="note-drawer-form"
-                className="px-5 py-2 bg-stone-900 hover:bg-stone-800 text-white font-bold rounded-md text-sm shadow-sm transition-all flex items-center space-x-2"
+                className="note-save-button"
               >
                 <Save className="w-4 h-4" />
                 <span>Salvar Nota</span>
@@ -1604,29 +1645,30 @@ function TasksView({ tasks, setTasks, syncToFirestore }) {
         </select>
         <button type="submit" className="px-6 py-3 bg-stone-900 hover:bg-stone-800 text-white font-semibold rounded-lg text-sm shadow-sm transition-colors">Criar</button>
       </form>
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+      <div className="task-board-columns grid grid-cols-1 md:grid-cols-3 gap-6">
         {['a_fazer', 'em_curso', 'concluido'].map((statusKey) => (
-          <div key={statusKey} className="bg-stone-200/60 p-4 rounded-lg space-y-3">
+          <div key={statusKey} className="task-lane bg-stone-200/60 p-4 rounded-lg space-y-3">
             <h4 className="font-bold text-xs uppercase tracking-wider text-stone-600">{statusKey.replace('_', ' ')}</h4>
             {tasks.filter(t => t.status === statusKey && !t.deleted).map(t => {
               const style = getCategoryStyle(t.category);
               return (
-                <div key={t.id} className={`p-3.5 rounded-md shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-lg transition-shadow group ${style.bg}`}>
-                  <div className="flex justify-between items-start">
-                    <span className="text-xs font-bold text-stone-800">{t.category}</span>
-                    <button 
-                      onClick={() => {
-                        const updatedTasks = tasks.map(task => task.id === t.id ? { ...task, deleted: true } : task);
-                        setTasks(updatedTasks);
-                        if(syncToFirestore) syncToFirestore('tasks', updatedTasks);
-                        toast.success('Tarefa movida para a Lixeira');
-                      }}
-                      className="opacity-0 group-hover:opacity-100 text-stone-400 hover:text-rose-500 transition-colors"
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
-                  </div>
-                  <p className="font-semibold text-sm text-stone-900 mt-1.5">{t.title}</p>
+                <div key={t.id} className={`task-note group ${statusKey === 'concluido' ? 'task-note-complete' : ''} ${style.bg}`}>
+                  <TaskNoteContent
+                    task={t}
+                    completed={statusKey === 'concluido'}
+                    onToggle={() => {
+                      const nextStatus = statusKey === 'a_fazer' ? 'em_curso' : statusKey === 'em_curso' ? 'concluido' : 'a_fazer';
+                      const updatedTasks = tasks.map(task => task.id === t.id ? { ...task, status: nextStatus } : task);
+                      setTasks(updatedTasks);
+                      if(syncToFirestore) syncToFirestore('tasks', updatedTasks);
+                    }}
+                    onDelete={() => {
+                      const updatedTasks = tasks.map(task => task.id === t.id ? { ...task, deleted: true } : task);
+                      setTasks(updatedTasks);
+                      if(syncToFirestore) syncToFirestore('tasks', updatedTasks);
+                      toast.success('Tarefa movida para a Lixeira');
+                    }}
+                  />
                 </div>
               );
             })}
