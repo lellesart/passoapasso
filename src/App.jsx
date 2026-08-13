@@ -125,6 +125,15 @@ const DEFAULT_COLOR = {
 
 const getCategoryStyle = (cat) => CATEGORY_COLORS[cat] || DEFAULT_COLOR;
 
+const getHabitTone = (color = '') => {
+  if (color.includes('4A85F6') || color.includes('blue')) return 'blue';
+  if (color.includes('FF9B6A') || color.includes('amber')) return 'orange';
+  if (color.includes('9864F5') || color.includes('purple')) return 'purple';
+  if (color.includes('10B981') || color.includes('emerald')) return 'green';
+  if (color.includes('rose')) return 'rose';
+  return 'neutral';
+};
+
 const getCategoryIcon = (cat) => {
   switch (cat) {
     case 'Trabalho': return <Briefcase className="w-4 h-4 mr-1.5" />;
@@ -884,30 +893,27 @@ function DashboardView({
 
     const sourceStatus = source.droppableId;
     const destStatus = destination.droppableId;
+    const orderedStatuses = ['a_fazer', 'em_curso', 'concluido'];
 
     const activeTasks = tasks.filter(t => !t.deleted);
     const deletedTasks = tasks.filter(t => t.deleted);
+    const groupedTasks = orderedStatuses.reduce((acc, status) => {
+      acc[status] = activeTasks.filter(t => t.status === status);
+      return acc;
+    }, {});
 
-    const sourceTasks = activeTasks.filter(t => t.status === sourceStatus);
-    const destTasks = sourceStatus === destStatus ? sourceTasks : activeTasks.filter(t => t.status === destStatus);
+    const [removedTask] = groupedTasks[sourceStatus].splice(source.index, 1);
+    if (!removedTask) return;
 
-    const movedTask = { ...sourceTasks[source.index], status: destStatus };
-    sourceTasks.splice(source.index, 1);
-    
-    if (sourceStatus !== destStatus) {
-      destTasks.splice(destination.index, 0, movedTask);
-    } else {
-      sourceTasks.splice(destination.index, 0, movedTask);
-    }
+    const movedTask = { ...removedTask, status: destStatus };
+    groupedTasks[destStatus].splice(destination.index, 0, movedTask);
 
-    const otherActiveTasks = activeTasks.filter(t => t.status !== sourceStatus && t.status !== destStatus);
-    
-    let newTasks = [];
-    if (sourceStatus === destStatus) {
-      newTasks = [...otherActiveTasks, ...sourceTasks, ...deletedTasks];
-    } else {
-      newTasks = [...otherActiveTasks, ...sourceTasks, ...destTasks, ...deletedTasks];
-    }
+    const otherActiveTasks = activeTasks.filter(t => !orderedStatuses.includes(t.status));
+    const newTasks = [
+      ...orderedStatuses.flatMap(status => groupedTasks[status]),
+      ...otherActiveTasks,
+      ...deletedTasks
+    ];
     
     setTasks(newTasks);
     if(syncToFirestore) syncToFirestore('tasks', newTasks);
@@ -935,13 +941,15 @@ function DashboardView({
   // Cálculo de progresso dos Hábitos
   const completedHabitsCount = Object.values(dailyHabitsState.completed).filter(Boolean).length;
   const habitsProgressPct = habits.length > 0 ? Math.round((completedHabitsCount / habits.length) * 100) : 0;
+  const todayLabel = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' }).format(new Date());
 
   return (
     <div className="editorial-page space-y-8">
       
       {/* 1. TEXTO DE BOAS-VINDAS E CLIMA NO MESMO ALINHAMENTO */}
-      <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-6 pb-2">
+      <div className="dashboard-masthead flex flex-col sm:flex-row sm:items-end justify-between gap-6 pb-2">
         <div>
+          <div className="dashboard-kicker">Organizador pessoal · edição diária</div>
           <h1 
             className="page-title"
             style={{ fontWeight: 900 }}
@@ -954,8 +962,10 @@ function DashboardView({
           >
             Um passo de cada vez.
           </h2>
+          <div className="editorial-rule"></div>
+          <div className="dashboard-date">{todayLabel}</div>
         </div>
-        <WeatherWidget />
+        <div className="dashboard-weather-brief"><WeatherWidget /></div>
       </div>
 
       {/* 2. PRÉVIA DO CALENDÁRIO SEMANAL */}
@@ -963,9 +973,11 @@ function DashboardView({
 
       {/* 3. SEÇÃO DE HÁBITOS DIÁRIOS (COLOCADA ACIMA DA LISTA DE TAREFAS) */}
       <div className="editorial-panel bg-white p-6 sm:p-8 rounded-lg shadow-[0_8px_30px_rgb(0,0,0,0.04)] space-y-4">
-        <div className="flex items-center justify-between mb-6">
+        <div className="section-heading flex items-center justify-between mb-6">
           <div className="flex items-center space-x-2">
-            <h2 className="font-bold text-2xl text-stone-900">Rastreador de Hábitos</h2>
+            <div>
+              <h2 className="section-eyebrow section-heading-title">Rastreador de hábitos · 01</h2>
+            </div>
           </div>
           <button onClick={() => setActiveTab('habits')} className="habit-manage-button">
             <span>Gerenciar</span>
@@ -977,6 +989,7 @@ function DashboardView({
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           {habits.slice(0, 4).map((habit) => {
             const isDone = Boolean(dailyHabitsState.completed[habit.id]);
+            const habitTone = getHabitTone(habit.color);
             const IconMap = {
               'Dumbbell': Dumbbell,
               'Apple': Apple,
@@ -989,20 +1002,20 @@ function DashboardView({
               <div
                 key={habit.id}
                 onClick={() => toggleDailyHabit(habit.id)}
-                className={`p-4 rounded-2xl flex items-center justify-between transition-all cursor-pointer select-none group ${
+                className={`habit-tile habit-tone-${habitTone} p-4 rounded-2xl flex items-center justify-between transition-all cursor-pointer select-none group ${
                   isDone 
-                    ? 'bg-stone-100' 
-                    : `${habit.color} hover:shadow-lg hover:-transtone-y-0.5`
+                    ? 'is-done'
+                    : 'hover:shadow-lg hover:-transtone-y-0.5'
                 }`}
               >
                 {/* Ícone e Texto */}
                 <div className="flex items-center space-x-3.5">
-                  <div className={`w-12 h-12 rounded-xl flex items-center justify-center bg-white shadow-sm ${isDone ? 'text-stone-400 opacity-60' : habit.iconColor || 'text-stone-800'}`}>
+                  <div className={`habit-tile-icon w-12 h-12 rounded-xl flex items-center justify-center bg-white shadow-sm ${isDone ? 'text-stone-400 opacity-60' : habit.iconColor || 'text-stone-800'}`}>
                     <Icon className="w-6 h-6" />
                   </div>
                   <div className="flex flex-col">
-                    <span className={`font-bold text-base ${isDone ? 'text-stone-500 line-through' : 'text-white'}`}>{habit.name}</span>
-                    <span className={`text-[11px] ${isDone ? 'text-stone-400' : 'text-white/80 font-medium'}`}>{habit.recurrence}</span>
+                    <span className={`habit-tile-label font-bold text-base ${isDone ? 'text-stone-500 line-through' : ''}`}>{habit.name}</span>
+                    <span className={`habit-tile-meta text-[11px] ${isDone ? 'text-stone-400' : 'font-medium'}`}>{habit.recurrence}</span>
                   </div>
                 </div>
 
@@ -1022,22 +1035,24 @@ function DashboardView({
 
       {/* 4. LISTA DE TAREFAS (QUADRO HORIZONTAL) */}
       <div className="editorial-panel bg-white p-6 sm:p-8 rounded-lg shadow-[0_8px_30px_rgb(0,0,0,0.04)] space-y-4">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-bold text-stone-900 text-2xl">Lista de tarefas</h3>
+        <div className="section-heading flex items-center justify-between mb-4">
+          <div>
+            <h3 className="section-eyebrow section-heading-title">Lista de tarefas · 02</h3>
+          </div>
           <span className="text-xs text-stone-400 font-medium md:hidden">Deslize para o lado →</span>
         </div>
 
         <DragDropContext onDragEnd={onDragEnd}>
-          <div className="task-board-columns flex md:grid md:grid-cols-3 gap-4 overflow-x-auto md:overflow-x-visible pb-4 pt-1 snap-x md:snap-none scrollbar-thin">
+          <div className="dashboard-task-board task-board-columns flex md:grid md:grid-cols-3 gap-4 overflow-x-auto md:overflow-x-visible pb-4 pt-1 snap-x md:snap-none scrollbar-thin">
             
             {/* Coluna A Fazer */}
-            <div className="task-lane min-w-[280px] sm:min-w-[320px] md:min-w-0 bg-stone-100/80 p-4 rounded-lg shadow-[0_8px_30px_rgb(0,0,0,0.04)] space-y-3 snap-start shrink-0 flex flex-col max-h-[500px]">
-              <div className="flex items-center justify-between border-b border-stone-200 pb-2">
-                <span className="font-bold text-xs uppercase tracking-wider text-stone-700 flex items-center space-x-1.5">
-                  <span className="w-2 h-2 rounded-full bg-stone-400"></span>
+            <div className="dashboard-task-lane task-lane min-w-[280px] sm:min-w-[320px] md:min-w-0 bg-stone-100/80 p-4 rounded-lg shadow-[0_8px_30px_rgb(0,0,0,0.04)] space-y-3 snap-start shrink-0 flex flex-col max-h-[500px]">
+              <div className="dashboard-task-card-header flex items-center justify-between border-b border-stone-200 pb-2">
+                <span className="dashboard-task-card-title font-bold text-xs uppercase tracking-wider text-stone-700 flex items-center space-x-1.5">
+                  <span className="dashboard-task-status-dot w-2 h-2 rounded-full bg-stone-400"></span>
                   <span>A Fazer</span>
                 </span>
-                <span className="text-xs font-bold text-stone-500">
+                <span className="dashboard-task-card-count text-xs font-bold text-stone-500">
                   ({tasks.filter(t => t.status === 'a_fazer' && !t.deleted).length})
                 </span>
               </div>
@@ -1047,7 +1062,7 @@ function DashboardView({
                   <div 
                     ref={provided.innerRef} 
                     {...provided.droppableProps} 
-                    className="space-y-2.5 overflow-y-auto pr-1 flex-1 min-h-[100px]"
+                    className="dashboard-task-dropzone space-y-2.5 overflow-y-auto pr-1 flex-1 min-h-[100px]"
                   >
                     {tasks.filter(t => t.status === 'a_fazer' && !t.deleted).map((t, index) => {
                       const style = getCategoryStyle(t.category);
@@ -1062,7 +1077,7 @@ function DashboardView({
                                 ...provided.draggableProps.style,
                                 transitionDuration: snapshot.isDropAnimating ? '0.1s' : provided.draggableProps.style?.transitionDuration,
                               }}
-                              className={`task-note group ${style.bg} ${snapshot.isDragging ? 'is-dragging' : ''}`}
+                              className={`dashboard-task-item task-note group ${style.bg} ${snapshot.isDragging ? 'is-dragging' : ''}`}
                             >
                               <TaskNoteContent
                                 task={t}
@@ -1086,13 +1101,13 @@ function DashboardView({
             </div>
 
             {/* Coluna Em Curso */}
-            <div className="task-lane min-w-[280px] sm:min-w-[320px] md:min-w-0 bg-stone-100/80 p-4 rounded-lg shadow-[0_8px_30px_rgb(0,0,0,0.04)] space-y-3 snap-start shrink-0 flex flex-col max-h-[500px]">
-              <div className="flex items-center justify-between border-b border-stone-200 pb-2">
-                <span className="font-bold text-xs uppercase tracking-wider text-amber-800 flex items-center space-x-1.5">
-                  <span className="w-2 h-2 rounded-full bg-amber-500"></span>
+            <div className="dashboard-task-lane task-lane min-w-[280px] sm:min-w-[320px] md:min-w-0 bg-stone-100/80 p-4 rounded-lg shadow-[0_8px_30px_rgb(0,0,0,0.04)] space-y-3 snap-start shrink-0 flex flex-col max-h-[500px]">
+              <div className="dashboard-task-card-header flex items-center justify-between border-b border-stone-200 pb-2">
+                <span className="dashboard-task-card-title dashboard-task-card-title-progress font-bold text-xs uppercase tracking-wider text-amber-800 flex items-center space-x-1.5">
+                  <span className="dashboard-task-status-dot w-2 h-2 rounded-full bg-amber-500"></span>
                   <span>Em Curso</span>
                 </span>
-                <span className="text-xs font-bold text-amber-800">
+                <span className="dashboard-task-card-count text-xs font-bold text-amber-800">
                   ({tasks.filter(t => t.status === 'em_curso' && !t.deleted).length})
                 </span>
               </div>
@@ -1102,7 +1117,7 @@ function DashboardView({
                   <div 
                     ref={provided.innerRef} 
                     {...provided.droppableProps} 
-                    className="space-y-2.5 overflow-y-auto pr-1 flex-1 min-h-[100px]"
+                    className="dashboard-task-dropzone space-y-2.5 overflow-y-auto pr-1 flex-1 min-h-[100px]"
                   >
                     {tasks.filter(t => t.status === 'em_curso' && !t.deleted).map((t, index) => {
                       const style = getCategoryStyle(t.category);
@@ -1117,7 +1132,7 @@ function DashboardView({
                                 ...provided.draggableProps.style,
                                 transitionDuration: snapshot.isDropAnimating ? '0.1s' : provided.draggableProps.style?.transitionDuration,
                               }}
-                              className={`task-note group ${style.bg} ${snapshot.isDragging ? 'is-dragging' : ''}`}
+                              className={`dashboard-task-item task-note group ${style.bg} ${snapshot.isDragging ? 'is-dragging' : ''}`}
                             >
                               <TaskNoteContent
                                 task={t}
@@ -1141,13 +1156,13 @@ function DashboardView({
             </div>
 
             {/* Coluna Concluído */}
-            <div className="task-lane min-w-[280px] sm:min-w-[320px] md:min-w-0 bg-stone-100/80 p-4 rounded-lg shadow-[0_8px_30px_rgb(0,0,0,0.04)] space-y-3 snap-start shrink-0 flex flex-col max-h-[500px]">
-              <div className="flex items-center justify-between border-b border-stone-200 pb-2">
-                <span className="font-bold text-xs uppercase tracking-wider text-emerald-800 flex items-center space-x-1.5">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500"></span>
+            <div className="dashboard-task-lane task-lane min-w-[280px] sm:min-w-[320px] md:min-w-0 bg-stone-100/80 p-4 rounded-lg shadow-[0_8px_30px_rgb(0,0,0,0.04)] space-y-3 snap-start shrink-0 flex flex-col max-h-[500px]">
+              <div className="dashboard-task-card-header flex items-center justify-between border-b border-stone-200 pb-2">
+                <span className="dashboard-task-card-title dashboard-task-card-title-done font-bold text-xs uppercase tracking-wider text-emerald-800 flex items-center space-x-1.5">
+                  <span className="dashboard-task-status-dot w-2 h-2 rounded-full bg-emerald-500"></span>
                   <span>Concluído</span>
                 </span>
-                <span className="text-xs font-bold text-emerald-800">
+                <span className="dashboard-task-card-count text-xs font-bold text-emerald-800">
                   ({tasks.filter(t => t.status === 'concluido' && !t.deleted).length})
                 </span>
               </div>
@@ -1157,7 +1172,7 @@ function DashboardView({
                   <div 
                     ref={provided.innerRef} 
                     {...provided.droppableProps} 
-                    className="space-y-2.5 overflow-y-auto pr-1 flex-1 min-h-[100px]"
+                    className="dashboard-task-dropzone space-y-2.5 overflow-y-auto pr-1 flex-1 min-h-[100px]"
                   >
                     {tasks.filter(t => t.status === 'concluido' && !t.deleted).map((t, index) => {
                       const style = getCategoryStyle(t.category);
@@ -1172,7 +1187,7 @@ function DashboardView({
                                 ...provided.draggableProps.style,
                                 transitionDuration: snapshot.isDropAnimating ? '0.1s' : provided.draggableProps.style?.transitionDuration,
                               }}
-                              className={`task-note task-note-complete group ${style.bg} ${snapshot.isDragging ? 'is-dragging' : ''}`}
+                              className={`dashboard-task-item task-note task-note-complete group ${style.bg} ${snapshot.isDragging ? 'is-dragging' : ''}`}
                             >
                               <TaskNoteContent
                                 task={t}
@@ -1203,10 +1218,10 @@ function DashboardView({
 
       {/* 6. CARD APENAS COM NOTAS GUARDADAS E BOTÃO "ESCREVER NOTAS" ABAIXO */}
       <div className="editorial-panel bg-white p-6 rounded-lg shadow-[0_8px_30px_rgb(0,0,0,0.04)] space-y-4">
-        <div className="flex items-center justify-between border-b border-stone-100 pb-5 mb-2">
-          <h3 className="font-bold text-stone-900 text-2xl flex items-center space-x-2">
-            <span>Notas</span>
-          </h3>
+        <div className="section-heading flex items-center justify-between border-b border-stone-100 pb-5 mb-2">
+          <div>
+            <h3 className="section-eyebrow section-heading-title">Notas · 03</h3>
+          </div>
           <span className="text-xs font-semibold text-stone-400">
             {notes.filter(n => !n.deleted).length} {notes.filter(n => !n.deleted).length === 1 ? 'nota' : 'notas'}
           </span>
@@ -1448,8 +1463,14 @@ function GoogleCalendarSyncView({ googleAccessToken, handleLogin, handleLogout }
 // 3. VISTA DE CALENDÁRIO MENSAL
 // ==========================================
 function CalendarView({ events, setEvents, tasks, syncToFirestore, googleAccessToken }) {
-  const [currentDate, setCurrentDate] = useState(new Date(2026, 6, 1));
-  const [selectedDateStr, setSelectedDateStr] = useState('2026-07-30');
+  const [currentDate, setCurrentDate] = useState(() => {
+    const today = new Date();
+    return new Date(today.getFullYear(), today.getMonth(), 1);
+  });
+  const [selectedDateStr, setSelectedDateStr] = useState(() => {
+    const today = new Date();
+    return `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  });
   
   const [eventTitle, setEventTitle] = useState('');
   const [eventTime, setEventTime] = useState('09:00');
@@ -1460,8 +1481,16 @@ function CalendarView({ events, setEvents, tasks, syncToFirestore, googleAccessT
   const year = currentDate.getFullYear();
   const month = currentDate.getMonth();
 
-  const prevMonth = () => setCurrentDate(new Date(year, month - 1, 1));
-  const nextMonth = () => setCurrentDate(new Date(year, month + 1, 1));
+  const prevMonth = () => {
+    const nextDate = new Date(year, month - 1, 1);
+    setCurrentDate(nextDate);
+    setSelectedDateStr(`${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}-01`);
+  };
+  const nextMonth = () => {
+    const nextDate = new Date(year, month + 1, 1);
+    setCurrentDate(nextDate);
+    setSelectedDateStr(`${nextDate.getFullYear()}-${String(nextDate.getMonth() + 1).padStart(2, '0')}-01`);
+  };
 
   const calendarDays = useMemo(() => {
     const firstDayIndex = new Date(year, month, 1).getDay();
@@ -1520,23 +1549,26 @@ function CalendarView({ events, setEvents, tasks, syncToFirestore, googleAccessT
   const dayEvents = events.filter(ev => ev.date === selectedDateStr && !ev.deleted);
 
   return (
-    <div className="space-y-6">
-      <div className="bg-white p-5 rounded-lg shadow-[0_8px_30px_rgb(0,0,0,0.04)] flex justify-between items-center">
-        <h2 className="text-xl font-bold text-stone-900">{MONTH_NAMES[month]} {year}</h2>
-        <div className="flex space-x-2">
-          <button onClick={prevMonth} className="p-2 border border-stone-300 rounded-md hover:bg-stone-100"><ChevronLeft className="w-4 h-4" /></button>
-          <button onClick={nextMonth} className="p-2 border border-stone-300 rounded-md hover:bg-stone-100"><ChevronRight className="w-4 h-4" /></button>
+    <div className="calendar-view space-y-6">
+      <div className="calendar-toolbar flex justify-between items-center">
+        <div>
+          <span className="calendar-kicker">Agenda · visão mensal</span>
+          <h2 className="calendar-month-title">{MONTH_NAMES[month]} {year}</h2>
+        </div>
+        <div className="calendar-navigation flex space-x-2">
+          <button onClick={prevMonth} className="calendar-nav-button" aria-label="Mês anterior"><ChevronLeft className="w-4 h-4" /></button>
+          <button onClick={nextMonth} className="calendar-nav-button" aria-label="Próximo mês"><ChevronRight className="w-4 h-4" /></button>
         </div>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        <div className="lg:col-span-2 bg-white p-5 rounded-lg shadow-[0_8px_30px_rgb(0,0,0,0.04)] space-y-4">
-          <div className="grid grid-cols-7 text-center border-b border-stone-200 pb-2">
-            {DAYS_OF_WEEK.map(d => <span key={d} className="text-xs font-bold text-stone-500 uppercase">{d}</span>)}
+      <div className="calendar-layout grid grid-cols-1 lg:grid-cols-3 gap-8">
+        <div className="calendar-grid-panel lg:col-span-2 space-y-4">
+          <div className="calendar-weekdays grid grid-cols-7 text-center">
+            {DAYS_OF_WEEK.map(d => <span key={d} className="calendar-weekday">{d}</span>)}
           </div>
-          <div className="grid grid-cols-7 gap-2">
+          <div className="calendar-days grid grid-cols-7 gap-x-2 gap-y-1">
             {calendarDays.map((item, idx) => {
-              if (!item) return <div key={`empty-${idx}`} className="h-20 rounded-md bg-stone-100/60"></div>;
+              if (!item) return <div key={`empty-${idx}`} className="calendar-empty-day h-20"></div>;
               const isSelected = item.dateStr === selectedDateStr;
               const dayEvs = events.filter(e => e.date === item.dateStr && !e.deleted);
 
@@ -1544,14 +1576,14 @@ function CalendarView({ events, setEvents, tasks, syncToFirestore, googleAccessT
                 <div
                   key={item.dateStr}
                   onClick={() => setSelectedDateStr(item.dateStr)}
-                  className={`h-20 p-1.5 rounded-md flex flex-col justify-between cursor-pointer transition-all ${
-                    isSelected ? 'bg-stone-200 ring-2 ring-stone-400 shadow-sm' : 'bg-white hover:bg-stone-50'
+                  className={`calendar-day h-20 p-1.5 flex flex-col justify-between cursor-pointer transition-all ${
+                    isSelected ? 'is-selected' : ''
                   }`}
                 >
-                  <span className={`text-xs font-bold w-5 h-5 flex items-center justify-center rounded ${isSelected ? 'bg-stone-900 text-white' : 'text-stone-800'}`}>{item.dayNumber}</span>
+                  <span className="calendar-day-number">{item.dayNumber}</span>
                   <div className="space-y-1">
                     {dayEvs.slice(0, 1).map(ev => (
-                      <div key={ev.id} className="text-[9px] truncate px-1 py-0.5 rounded bg-blue-200 text-blue-900 font-bold flex items-center justify-between">
+                      <div key={ev.id} className="calendar-event-mark text-[9px] truncate px-1 py-0.5 flex items-center justify-between">
                         <span className="truncate">{ev.title}</span>
                       </div>
                     ))}
@@ -1562,39 +1594,50 @@ function CalendarView({ events, setEvents, tasks, syncToFirestore, googleAccessT
           </div>
         </div>
 
-        <div className="bg-white p-5 rounded-lg shadow-[0_8px_30px_rgb(0,0,0,0.04)] space-y-4">
-          <h3 className="font-bold text-stone-800 text-sm">Adicionar Evento ({selectedDateStr})</h3>
-          <form onSubmit={addEvent} className="space-y-3">
-            <input type="text" placeholder="Título do evento..." value={eventTitle} onChange={(e) => setEventTitle(e.target.value)} className="w-full px-3 py-2 rounded-md border border-stone-300 bg-stone-50 text-sm focus:outline-none" />
-            <div className="flex gap-2">
-              <input type="time" value={eventTime} onChange={(e) => setEventTime(e.target.value)} className="w-1/2 px-3 py-2 rounded-md border border-stone-300 text-sm" />
-              <select value={eventCategory} onChange={(e) => setEventCategory(e.target.value)} className="w-1/2 px-3 py-2 rounded-md border border-stone-300 text-sm">
-                <option value="Trabalho">Trabalho</option>
-                <option value="Pessoal">Pessoal</option>
-                <option value="Saúde">Saúde</option>
-              </select>
+        <div className="calendar-event-panel space-y-4">
+          <div className="calendar-event-heading">
+            <span className="calendar-kicker">Novo registro</span>
+            <h3>Adicionar evento</h3>
+            <span className="calendar-selected-date">{selectedDateStr}</span>
+          </div>
+          <form onSubmit={addEvent} className="calendar-event-form space-y-3">
+            <input type="text" placeholder="Título do evento..." value={eventTitle} onChange={(e) => setEventTitle(e.target.value)} className="calendar-title-field" />
+            <div className="calendar-time-row flex gap-2">
+              <input type="time" value={eventTime} onChange={(e) => setEventTime(e.target.value)} className="calendar-time-field" />
+              <div className="calendar-category-options">
+                {['Trabalho', 'Pessoal', 'Saúde'].map(category => (
+                  <button
+                    key={category}
+                    type="button"
+                    onClick={() => setEventCategory(category)}
+                    className={`calendar-category-option ${eventCategory === category ? 'is-selected' : ''}`}
+                  >
+                    {category}
+                  </button>
+                ))}
+              </div>
             </div>
             {googleAccessToken && (
-              <label className="flex items-center space-x-2 text-xs text-stone-700 font-medium">
+              <label className="calendar-sync-option flex items-center space-x-2">
                 <input 
                   type="checkbox" 
                   checked={syncGoogle}
                   onChange={(e) => setSyncGoogle(e.target.checked)}
-                  className="rounded border-stone-300 text-blue-600 focus:ring-blue-500"
+                  className="rounded border-stone-300"
                 />
                 <span>Sincronizar no Google Calendar</span>
               </label>
             )}
-            <button type="submit" disabled={isAddingEvent} className="w-full py-2 bg-stone-900 hover:bg-stone-800 disabled:bg-stone-400 text-white font-semibold rounded-md text-sm shadow-xs transition-colors">
+            <button type="submit" disabled={isAddingEvent} className="calendar-submit-button">
               {isAddingEvent ? 'Adicionando...' : 'Adicionar ao Calendário'}
             </button>
           </form>
 
-          <div className="space-y-2 pt-2">
+          <div className="calendar-event-list space-y-2 pt-2">
             {dayEvents.map(ev => {
               const style = getCategoryStyle(ev.category);
               return (
-                <div key={ev.id} className={`p-3 rounded-md ${style.bg} flex justify-between items-center shadow-[0_8px_30px_rgb(0,0,0,0.04)] group`}>
+                <div key={ev.id} className={`calendar-event-item ${style.bg} flex justify-between items-center group`}>
                   <div>
                     <span className="text-xs font-bold text-stone-800">{ev.time}</span>
                     <p className="font-semibold text-stone-900 text-sm mt-0.5">{ev.title}</p>
@@ -1635,20 +1678,38 @@ function TasksView({ tasks, setTasks, syncToFirestore }) {
   };
 
   return (
-    <div className="space-y-6">
-      <form onSubmit={addTask} className="bg-white p-4 sm:p-6 rounded-lg shadow-[0_8px_30px_rgb(0,0,0,0.04)] flex flex-col sm:flex-row gap-3">
-        <input type="text" placeholder="Adicionar tarefa..." value={newTaskTitle} onChange={(e) => setNewTaskTitle(e.target.value)} className="flex-1 px-4 py-3 rounded-lg bg-stone-50 border-0 focus:ring-2 focus:ring-stone-200 text-sm focus:outline-none" />
-        <select value={newTaskCategory} onChange={(e) => setNewTaskCategory(e.target.value)} className="px-4 py-3 rounded-lg bg-stone-50 border-0 focus:ring-2 focus:ring-stone-200 text-sm focus:outline-none">
-          <option value="Trabalho">Trabalho</option>
-          <option value="Pessoal">Pessoal</option>
-          <option value="Saúde">Saúde</option>
-        </select>
-        <button type="submit" className="px-6 py-3 bg-stone-900 hover:bg-stone-800 text-white font-semibold rounded-lg text-sm shadow-sm transition-colors">Criar</button>
+    <div className="tasks-view space-y-6">
+      <form onSubmit={addTask} className="tasks-intake">
+        <div className="tasks-intake-heading">
+          <span className="calendar-kicker">Novo registro</span>
+          <h2>Adicionar tarefa</h2>
+        </div>
+        <div className="tasks-intake-fields">
+          <input type="text" placeholder="O que precisa ser feito?" value={newTaskTitle} onChange={(e) => setNewTaskTitle(e.target.value)} className="task-title-field" />
+          <div className="task-category-options" role="group" aria-label="Categoria da tarefa">
+            {['Trabalho', 'Pessoal', 'Saúde', 'Estudos'].map(category => (
+              <button
+                key={category}
+                type="button"
+                onClick={() => setNewTaskCategory(category)}
+                className={`task-category-option ${newTaskCategory === category ? 'is-selected' : ''}`}
+                aria-pressed={newTaskCategory === category}
+              >
+                {category}
+              </button>
+            ))}
+          </div>
+          <button type="submit" className="task-submit-button">Criar tarefa</button>
+        </div>
       </form>
       <div className="task-board-columns grid grid-cols-1 md:grid-cols-3 gap-6">
         {['a_fazer', 'em_curso', 'concluido'].map((statusKey) => (
           <div key={statusKey} className="task-lane bg-stone-200/60 p-4 rounded-lg space-y-3">
-            <h4 className="font-bold text-xs uppercase tracking-wider text-stone-600">{statusKey.replace('_', ' ')}</h4>
+            <h4 className={`task-lane-heading task-lane-heading-${statusKey}`}>
+              <span className="task-status-dot"></span>
+              <span>{statusKey === 'a_fazer' ? 'A fazer' : statusKey === 'em_curso' ? 'Em curso' : 'Concluído'}</span>
+              <span className="task-lane-count">({tasks.filter(t => t.status === statusKey && !t.deleted).length})</span>
+            </h4>
             {tasks.filter(t => t.status === statusKey && !t.deleted).map(t => {
               const style = getCategoryStyle(t.category);
               return (
@@ -1734,57 +1795,47 @@ function HabitsView({ habits, setHabits, syncToFirestore }) {
   };
 
   return (
-    <div className="space-y-6">
-      {/* Form de Criação */}
-      <form onSubmit={handleAddHabit} className="bg-white p-6 rounded-lg shadow-[0_8px_30px_rgb(0,0,0,0.04)] space-y-5">
-        <h3 className="font-bold text-stone-800 flex items-center space-x-2">
-          <Plus className="w-5 h-5 text-emerald-600" />
-          <span>Criar Novo Hábito</span>
-        </h3>
-        
-        <div className="flex flex-col md:flex-row gap-6 items-start md:items-center">
-          <input type="text" placeholder="Qual hábito queres monitorizar?" value={newHabitName} onChange={(e) => setNewHabitName(e.target.value)} className="flex-1 w-full px-3.5 py-2.5 rounded-md border border-stone-300 text-sm focus:outline-none focus:ring-2 focus:ring-stone-400" />
-          
-          <div className="flex flex-col space-y-1.5">
-            <span className="text-xs font-semibold text-stone-500 uppercase tracking-wider">Cor:</span>
-            <div className="flex gap-2">
+    <div className="habits-view space-y-6">
+      <form onSubmit={handleAddHabit} className="habits-intake">
+        <div className="habits-intake-heading">
+          <span className="calendar-kicker">Daily log · novo registro</span>
+          <h2>Adicionar hábito</h2>
+        </div>
+
+        <div className="habits-intake-top">
+          <input type="text" placeholder="Qual hábito deseja monitorar?" value={newHabitName} onChange={(e) => setNewHabitName(e.target.value)} className="habit-name-field" />
+          <div className="habit-color-field">
+            <span className="habit-field-label">Tom do registro</span>
+            <div className="habit-color-options">
               {habitColors.map(c => (
                 <button
                   type="button"
                   key={c.value}
                   onClick={() => setNewHabitColor(c.value)}
-                  className={`w-7 h-7 rounded-full ${c.hex} transition-all ${newHabitColor === c.value ? 'ring-2 ring-offset-2 ring-stone-800 scale-110' : 'hover:scale-110'}`}
+                  aria-label={`Selecionar cor ${c.value}`}
+                  className={`habit-color-swatch ${c.hex} ${newHabitColor === c.value ? 'is-selected' : ''}`}
                 />
               ))}
             </div>
           </div>
         </div>
-        
-        <div className="space-y-3 pt-3 border-t border-stone-100">
-          <span className="text-sm font-semibold text-stone-700 block">Dias de Repetição:</span>
-          <div className="flex flex-wrap gap-4">
-            <label className="flex items-center space-x-2 text-sm text-stone-600 cursor-pointer">
-              <input type="radio" name="recurrence" checked={recurrenceType === 'todos_dias'} onChange={() => setRecurrenceType('todos_dias')} className="accent-stone-900 w-4 h-4" />
-              <span>Todos os dias</span>
-            </label>
-            <label className="flex items-center space-x-2 text-sm text-stone-600 cursor-pointer">
-              <input type="radio" name="recurrence" checked={recurrenceType === 'dias_especificos'} onChange={() => setRecurrenceType('dias_especificos')} className="accent-stone-900 w-4 h-4" />
-              <span>Dias específicos</span>
-            </label>
-            <label className="flex items-center space-x-2 text-sm text-stone-600 cursor-pointer">
-              <input type="radio" name="recurrence" checked={recurrenceType === 'uma_vez'} onChange={() => setRecurrenceType('uma_vez')} className="accent-stone-900 w-4 h-4" />
-              <span>Apenas uma vez</span>
-            </label>
+
+        <div className="habit-recurrence-field">
+          <span className="habit-field-label">Frequência</span>
+          <div className="habit-recurrence-options">
+            <button type="button" onClick={() => setRecurrenceType('todos_dias')} className={`habit-recurrence-option ${recurrenceType === 'todos_dias' ? 'is-selected' : ''}`}>Todos os dias</button>
+            <button type="button" onClick={() => setRecurrenceType('dias_especificos')} className={`habit-recurrence-option ${recurrenceType === 'dias_especificos' ? 'is-selected' : ''}`}>Dias específicos</button>
+            <button type="button" onClick={() => setRecurrenceType('uma_vez')} className={`habit-recurrence-option ${recurrenceType === 'uma_vez' ? 'is-selected' : ''}`}>Apenas uma vez</button>
           </div>
 
           {recurrenceType === 'dias_especificos' && (
-            <div className="flex flex-wrap gap-2 pt-2">
+            <div className="habit-day-options">
               {daysOfWeek.map(day => (
                 <button
                   type="button"
                   key={day}
                   onClick={() => toggleDay(day)}
-                  className={`px-3 py-1.5 rounded-md text-xs font-bold transition-colors shadow-xs ${selectedDays.includes(day) ? 'bg-stone-900 text-white' : 'bg-white border border-stone-200 text-stone-500 hover:bg-stone-50'}`}
+                  className={`habit-day-option ${selectedDays.includes(day) ? 'is-selected' : ''}`}
                 >
                   {day}
                 </button>
@@ -1792,18 +1843,14 @@ function HabitsView({ habits, setHabits, syncToFirestore }) {
             </div>
           )}
         </div>
-        <div className="pt-2">
-          <button type="submit" className="px-5 py-2.5 bg-stone-900 hover:bg-stone-800 text-white font-bold rounded-md text-sm transition-colors shadow-sm">
-            Adicionar Hábito
-          </button>
-        </div>
+        <button type="submit" className="habit-submit-button">Adicionar hábito</button>
       </form>
 
-      {/* Grid de Hábitos */}
-      <div className="bg-white rounded-lg p-6 shadow-[0_8px_30px_rgb(0,0,0,0.04)] space-y-4">
-        <h3 className="font-bold text-lg text-stone-800">Meus Hábitos</h3>
-        <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-4">
+      <div className="habits-list space-y-4">
+        <h3 className="section-eyebrow section-heading-title">Meus hábitos · 01</h3>
+        <div className="habits-grid">
           {habits.filter(h => !h.deleted).map(h => {
+            const habitTone = getHabitTone(h.color);
             const IconMap = {
               'Dumbbell': Dumbbell,
               'Apple': Apple,
@@ -1813,14 +1860,14 @@ function HabitsView({ habits, setHabits, syncToFirestore }) {
             const Icon = IconMap[h.iconName] || Activity;
 
             return (
-              <div key={h.id} className={`p-5 rounded-2xl flex flex-col justify-between h-32 ${h.color} shadow-[0_8px_30px_rgb(0,0,0,0.04)] hover:shadow-lg transition-shadow group relative overflow-hidden`}>
-                <div className="relative z-10">
+              <div key={h.id} className={`habit-note habit-tone-${habitTone} group ${h.color}`}>
+                <div className="habit-note-main">
                   <div className="flex justify-between items-start mb-2">
-                    <div className={`w-8 h-8 rounded-lg flex items-center justify-center bg-white shadow-sm ${h.iconColor || 'text-stone-800'}`}>
+                    <div className={`habit-note-icon ${h.iconColor || 'text-stone-800'}`}>
                       <Icon className="w-4 h-4" />
                     </div>
                     <button 
-                      className="opacity-0 group-hover:opacity-100 bg-black/10 hover:bg-black/20 text-white p-1.5 rounded-lg transition-all" 
+                      className="habit-delete"
                       onClick={() => {
                         const updatedHabits = habits.map(habit => habit.id === h.id ? { ...habit, deleted: true } : habit);
                         setHabits(updatedHabits);
@@ -1831,11 +1878,11 @@ function HabitsView({ habits, setHabits, syncToFirestore }) {
                       <Trash2 className="w-4 h-4" />
                     </button>
                   </div>
-                  <h4 className="font-bold text-white leading-tight line-clamp-1 text-base">{h.name}</h4>
+                  <h4 className="habit-note-title">{h.name}</h4>
                 </div>
-                <div className="mt-auto pt-2 flex items-center space-x-1.5 border-t border-white/20 relative z-10">
-                  <RotateCcw className="w-3.5 h-3.5 text-white/60" />
-                  <span className="text-xs font-semibold text-white/80 truncate">{h.recurrence}</span>
+                <div className="habit-note-footer">
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>{h.recurrence}</span>
                 </div>
               </div>
             );
@@ -1930,20 +1977,19 @@ function PomodoroView({ tasks, setTasks, syncToFirestore }) {
   const activeTasks = tasks.filter(t => !t.deleted && t.status !== 'concluido');
 
   return (
-    <div className="max-w-xl mx-auto bg-white p-8 rounded-lg shadow-[0_8px_30px_rgb(0,0,0,0.04)] space-y-8">
-      <div className="text-center space-y-2">
-        <h3 className="text-2xl font-bold text-stone-900 flex items-center justify-center space-x-2 mb-2">
-          <span>Temporizador de Foco</span>
-        </h3>
-        <p className="text-sm text-stone-500">Mantenha o foco e aumente sua produtividade</p>
+    <div className="pomodoro-view max-w-xl mx-auto space-y-8">
+      <div className="pomodoro-heading">
+        <span className="calendar-kicker">Focus session · 01</span>
+        <h2>Temporizador de foco</h2>
+        <p>Mantenha o foco e aumente sua produtividade.</p>
       </div>
 
-      <div className="space-y-3 text-left">
-        <label className="block text-sm font-bold text-stone-700">Focar na Tarefa (opcional):</label>
+      <div className="pomodoro-task-field space-y-3 text-left">
+        <label className="habit-field-label">Tarefa em foco · opcional</label>
         <select 
           value={selectedTaskId} 
           onChange={(e) => setSelectedTaskId(e.target.value)}
-          className="w-full px-4 py-3 rounded-lg border-0 shadow-[0_2px_10px_rgb(0,0,0,0.04)] text-sm focus:outline-none focus:ring-2 focus:ring-stone-200 bg-white text-stone-700"
+          className="pomodoro-task-select"
           disabled={isActive}
         >
           <option value="">Selecione uma tarefa em andamento...</option>
@@ -1953,23 +1999,24 @@ function PomodoroView({ tasks, setTasks, syncToFirestore }) {
         </select>
       </div>
 
-      <div className="py-12 bg-stone-50 rounded-2xl flex flex-col items-center justify-center shadow-inner border border-stone-100 relative overflow-hidden">
-        {isActive && <div className="absolute top-0 left-0 h-1 bg-rose-500 transition-all duration-1000 ease-linear" style={{ width: `${(1 - (timeLeft / (25 * 60))) * 100}%` }}></div>}
-        <div className="font-mono text-7xl font-black text-stone-800 tracking-tight">
+      <div className="pomodoro-clock relative overflow-hidden">
+        {isActive && <div className="pomodoro-progress" style={{ width: `${(1 - (timeLeft / (25 * 60))) * 100}%` }}></div>}
+        <div className="pomodoro-time">
           {formatTime(timeLeft)}
         </div>
+        <span className="pomodoro-clock-caption">25 min focus interval</span>
       </div>
 
-      <div className="flex justify-center space-x-4">
+      <div className="pomodoro-actions flex justify-center space-x-4">
         <button 
           onClick={() => setIsActive(!isActive)} 
-          className={`w-32 py-3 rounded-lg font-bold text-white transition-colors shadow-sm ${isActive ? 'bg-amber-500 hover:bg-amber-600' : 'bg-rose-500 hover:bg-rose-600'}`}
+          className={`pomodoro-primary ${isActive ? 'is-paused' : ''}`}
         >
           {isActive ? 'Pausar' : 'Iniciar'}
         </button>
         <button 
           onClick={() => { setIsActive(false); setTimeLeft(25 * 60); }} 
-          className="w-32 py-3 bg-stone-200 hover:bg-stone-300 text-stone-700 font-bold rounded-lg transition-colors"
+          className="pomodoro-secondary"
         >
           Resetar
         </button>
