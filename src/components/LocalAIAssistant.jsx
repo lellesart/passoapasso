@@ -7,16 +7,41 @@ import {
   AlertCircle, 
   Trash2,
   ChevronDown,
-  Brain
+  Brain,
+  RotateCcw,
+  CheckCircle2
 } from 'lucide-react';
 import './LocalAIAssistant.css';
+import { AIToolConfirmation } from './AIToolConfirmation';
 import { 
   checkOllamaStatus, 
-  sendChatMessageStream, 
+  sendOrganizerAgentMessageStream,
   buildSystemContext 
 } from '../services/localLLMService';
 
-export function LocalAIAssistant({ tasks = [], habits = [], notes = [], events = [], user = null }) {
+const PREFERRED_LOCAL_MODEL = 'qwen3.5:4b';
+
+const selectPreferredModel = (models) => (
+  models.find(model => model === PREFERRED_LOCAL_MODEL)
+  || models.find(model => model.startsWith('qwen3.5:4b'))
+  || models.find(model => model.startsWith('qwen3.5'))
+  || models.find(model => model.startsWith('qwen3'))
+  || models.find(model => model.startsWith('llama3.2'))
+  || models[0]
+);
+
+export function LocalAIAssistant({
+  tasks = [],
+  habits = [],
+  notes = [],
+  events = [],
+  dailyHabitsState = null,
+  user = null,
+  googleCalendarConnected = false,
+  onExecuteAction = null,
+  onUndoAction = null,
+  onAuditAction = null,
+}) {
   const [isOpen, setIsOpen] = useState(false);
   const [isMinimized, setIsMinimized] = useState(false);
   
@@ -36,6 +61,10 @@ export function LocalAIAssistant({ tasks = [], habits = [], notes = [], events =
   const [inputMessage, setInputMessage] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
   const [activeStreamingText, setActiveStreamingText] = useState('');
+  const hasPendingAction = messages.some(message => (
+    message.kind === 'action-confirmation'
+    && ['pending', 'confirming', 'error'].includes(message.actionStatus)
+  ));
   
   const messagesEndRef = useRef(null);
   const abortControllerRef = useRef(null);
@@ -52,7 +81,7 @@ export function LocalAIAssistant({ tasks = [], habits = [], notes = [], events =
     });
 
     if (result.models.length > 0) {
-      const preferred = result.models.find(m => m.includes('llama3') || m.includes('qwen')) || result.models[0];
+      const preferred = selectPreferredModel(result.models);
       setSelectedModel(currentModel => currentModel || preferred);
     }
   }, []);
@@ -73,7 +102,7 @@ export function LocalAIAssistant({ tasks = [], habits = [], notes = [], events =
 
   const handleSendMessage = async (customPrompt = null) => {
     const textToSend = customPrompt || inputMessage;
-    if (!textToSend.trim() || isGenerating) return;
+    if (!textToSend.trim() || isGenerating || hasPendingAction) return;
 
     const userMsg = {
       id: Date.now().toString(),
@@ -88,13 +117,26 @@ export function LocalAIAssistant({ tasks = [], habits = [], notes = [], events =
     setActiveStreamingText('');
 
     // Prepare system context with the latest data stored in the organizer.
-    const systemContext = buildSystemContext({ tasks, habits, notes, events, user });
+    const organizerData = {
+      tasks,
+      habits,
+      notes,
+      events,
+      dailyHabitsState,
+      user,
+      googleCalendarConnected,
+    };
+    const systemContext = buildSystemContext({
+      ...organizerData,
+      toolsEnabled: true,
+      writeToolsEnabled: true,
+    });
     
     // Prepare conversation payload for LLM (last 10 messages max)
     const historyPayload = [...messages, userMsg]
-      .filter(m => m.id !== 'welcome')
+      .filter(m => m.id !== 'welcome' && m.content && m.kind !== 'action-confirmation')
       .slice(-10)
-      .map(m => ({ role: m.role, content: m.content }));
+      .map(m => ({ role: m.role === 'user' ? 'user' : 'assistant', content: m.content }));
 
     const abortController = new AbortController();
     abortControllerRef.current = abortController;
@@ -102,10 +144,11 @@ export function LocalAIAssistant({ tasks = [], habits = [], notes = [], events =
     let streamedAccumulator = '';
 
     try {
-      const modelToUse = selectedModel || (ollamaStatus.models[0] || 'llama3.2');
+      const modelToUse = selectedModel || selectPreferredModel(ollamaStatus.models) || PREFERRED_LOCAL_MODEL;
       
-      await sendChatMessageStream({
+      const agentResult = await sendOrganizerAgentMessageStream({
         messages: historyPayload,
+        organizerData,
         systemContext,
         model: modelToUse,
         signal: abortController.signal,
@@ -115,14 +158,27 @@ export function LocalAIAssistant({ tasks = [], habits = [], notes = [], events =
         }
       });
 
-      // Streaming finished
-      if (streamedAccumulator.trim()) {
+      if (agentResult.pendingAction) {
+        setMessages(prev => [
+          ...prev,
+          {
+            id: `action-${Date.now()}`,
+            role: 'assistant',
+            kind: 'action-confirmation',
+            proposal: agentResult.pendingAction,
+            actionStatus: 'pending',
+            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          }
+        ]);
+      } else {
+        const finalText = streamedAccumulator.trim() || agentResult.content.trim();
+        if (!finalText) return;
         setMessages(prev => [
           ...prev,
           {
             id: (Date.now() + 1).toString(),
             role: 'assistant',
-            content: streamedAccumulator.trim(),
+            content: finalText,
             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
           }
         ]);
@@ -147,6 +203,120 @@ export function LocalAIAssistant({ tasks = [], habits = [], notes = [], events =
     }
   };
 
+  const updateActionMessage = (messageId, updates) => {
+    setMessages(prev => prev.map(message => (
+      message.id === messageId ? { ...message, ...updates } : message
+    )));
+  };
+
+  const handleConfirmAction = async (messageId, proposal) => {
+    if (!onExecuteAction) {
+      updateActionMessage(messageId, { actionStatus: 'error', actionError: 'O executor do Organizador não está disponível.' });
+      return;
+    }
+
+    updateActionMessage(messageId, { actionStatus: 'confirming', actionError: '' });
+    try {
+      const result = await onExecuteAction(proposal);
+      if (!result?.ok) throw new Error(result?.error || 'Não foi possível executar a ação.');
+      const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+      let auditResult = null;
+      try {
+        auditResult = await onAuditAction?.({
+          toolName: proposal.toolName,
+          arguments: proposal.arguments,
+          confirmation: 'confirmed',
+          result: 'success',
+          resultMessage: result.message,
+          collection: result.collection,
+        });
+      } catch (auditError) {
+        console.error('Não foi possível registrar a auditoria da IA:', auditError);
+      }
+      setMessages(prev => [
+        ...prev.map(message => message.id === messageId
+          ? { ...message, actionStatus: 'confirmed', actionResult: result, actionError: '' }
+          : message),
+        {
+          id: `result-${Date.now()}`,
+          role: 'assistant',
+          kind: 'action-result',
+          content: result.message,
+          timestamp,
+          actionResult: result,
+          originalToolName: proposal.toolName,
+          auditEntryId: auditResult?.entry?.id || null,
+          undoStatus: result.undoId ? 'available' : null,
+        },
+      ]);
+    } catch (error) {
+      const auditPromise = onAuditAction?.({
+        toolName: proposal.toolName,
+        arguments: proposal.arguments,
+        confirmation: 'confirmed',
+        result: 'error',
+        resultMessage: error.message || 'Não foi possível executar a ação.',
+      });
+      auditPromise?.catch(console.error);
+      updateActionMessage(messageId, {
+        actionStatus: 'error',
+        actionError: error.message || 'Não foi possível executar a ação.',
+      });
+    }
+  };
+
+  const handleCancelAction = (messageId, proposal) => {
+    const timestamp = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+    setMessages(prev => [
+      ...prev.map(message => message.id === messageId
+        ? { ...message, actionStatus: 'cancelled', actionError: '' }
+        : message),
+      {
+        id: `cancelled-${Date.now()}`,
+        role: 'assistant',
+        kind: 'action-result',
+        content: 'Ação cancelada. Nenhum dado foi alterado.',
+        timestamp,
+      },
+    ]);
+    const auditPromise = onAuditAction?.({
+      toolName: proposal.toolName,
+      arguments: proposal.arguments,
+      confirmation: 'cancelled',
+      result: 'cancelled',
+      resultMessage: 'Ação cancelada. Nenhum dado foi alterado.',
+    });
+    auditPromise?.catch(console.error);
+  };
+
+  const handleUndoAction = async (messageId, message) => {
+    if (!onUndoAction || !message.actionResult?.undoId || message.undoStatus !== 'available') return;
+    updateActionMessage(messageId, { undoStatus: 'undoing', undoError: '' });
+    try {
+      const result = await onUndoAction(message.actionResult.undoId);
+      if (!result?.ok) throw new Error(result?.error || 'Não foi possível desfazer a ação.');
+      updateActionMessage(messageId, {
+        undoStatus: 'undone',
+        undoMessage: result.message,
+        undoError: '',
+      });
+      await onAuditAction?.({
+        toolName: message.actionResult?.toolName || message.originalToolName || 'acao_desconhecida',
+        arguments: {},
+        confirmation: 'confirmed',
+        result: 'undone',
+        resultMessage: result.message,
+        collection: result.collection,
+        undoOf: message.auditEntryId,
+      });
+    } catch (error) {
+      updateActionMessage(messageId, {
+        undoStatus: 'available',
+        undoError: error.message || 'Não foi possível desfazer a ação.',
+      });
+    }
+  };
+
   const handleStopGeneration = () => {
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -154,6 +324,7 @@ export function LocalAIAssistant({ tasks = [], habits = [], notes = [], events =
   };
 
   const handleClearHistory = () => {
+    if (isGenerating || hasPendingAction) return;
     setMessages([
       {
         id: 'welcome',
@@ -288,23 +459,45 @@ export function LocalAIAssistant({ tasks = [], habits = [], notes = [], events =
 
               {/* Chat Message List */}
               <div className="local-ai-messages">
-                {messages.map((msg) => (
+                {messages.map((msg) => msg.kind === 'action-confirmation' ? (
+                  <div key={msg.id} className="local-ai-message-row is-assistant is-action">
+                    <AIToolConfirmation
+                      proposal={msg.proposal}
+                      status={msg.actionStatus}
+                      error={msg.actionError}
+                      onConfirm={() => handleConfirmAction(msg.id, msg.proposal)}
+                      onCancel={() => handleCancelAction(msg.id, msg.proposal)}
+                    />
+                  </div>
+                ) : (
                   <div 
                     key={msg.id}
                     className={`local-ai-message-row ${msg.role === 'user' ? 'is-user' : 'is-assistant'}`}
                   >
                     <div 
-                      className={`local-ai-message ${msg.role === 'user' ? 'is-user' : 'is-assistant'}`}
+                      className={`local-ai-message ${msg.role === 'user' ? 'is-user' : 'is-assistant'} ${msg.kind === 'action-result' ? 'is-action-result' : ''}`}
                     >
-                      {/* Render markdown line breaks */}
                       <div className="local-ai-message-content">
                         {msg.content}
                       </div>
-                      <span 
-                        className="local-ai-message-time"
-                      >
-                        {msg.timestamp}
-                      </span>
+                      {msg.kind === 'action-result' && msg.undoStatus && (
+                        <div className="ai-action-result-controls">
+                          {msg.undoStatus === 'available' && (
+                            <button type="button" onClick={() => handleUndoAction(msg.id, msg)}>
+                              <RotateCcw className="w-3.5 h-3.5" />
+                              Desfazer
+                            </button>
+                          )}
+                          {msg.undoStatus === 'undoing' && (
+                            <span><RefreshCw className="w-3.5 h-3.5 animate-spin" /> Desfazendo</span>
+                          )}
+                          {msg.undoStatus === 'undone' && (
+                            <span><CheckCircle2 className="w-3.5 h-3.5" /> {msg.undoMessage || 'Ação desfeita'}</span>
+                          )}
+                          {msg.undoError && <small role="alert">{msg.undoError}</small>}
+                        </div>
+                      )}
+                      <span className="local-ai-message-time">{msg.timestamp}</span>
                     </div>
                   </div>
                 ))}
@@ -342,7 +535,7 @@ export function LocalAIAssistant({ tasks = [], habits = [], notes = [], events =
                   <button
                     key={idx}
                     onClick={() => handleSendMessage(action.prompt)}
-                    disabled={isGenerating || !ollamaStatus.online}
+                    disabled={isGenerating || hasPendingAction || !ollamaStatus.online}
                     className="local-ai-chip"
                   >
                     {action.label}
@@ -362,8 +555,8 @@ export function LocalAIAssistant({ tasks = [], habits = [], notes = [], events =
                   type="text"
                   value={inputMessage}
                   onChange={(e) => setInputMessage(e.target.value)}
-                  placeholder={ollamaStatus.online ? "Pergunte ao Ajudante do Dia..." : "Inicie o Ollama para conversar..."}
-                  disabled={isGenerating || !ollamaStatus.online}
+                  placeholder={hasPendingAction ? 'Confirme ou cancele a ação acima...' : ollamaStatus.online ? "Pergunte ao Ajudante do Dia..." : "Inicie o Ollama para conversar..."}
+                  disabled={isGenerating || hasPendingAction || !ollamaStatus.online}
                   className="local-ai-input"
                 />
 
@@ -379,7 +572,7 @@ export function LocalAIAssistant({ tasks = [], habits = [], notes = [], events =
                 ) : (
                   <button
                     type="submit"
-                    disabled={!inputMessage.trim() || !ollamaStatus.online}
+                    disabled={!inputMessage.trim() || hasPendingAction || !ollamaStatus.online}
                     className="local-ai-send-button"
                     title="Enviar mensagem"
                   >

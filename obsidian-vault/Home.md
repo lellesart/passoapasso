@@ -63,3 +63,10 @@
 
 > [!IMPORTANT]
 > A transição para a Fase 2 está diretamente bloqueada pela necessidade de geração das credenciais do Firebase. Este é o passo crítico atual.
+
+## 6. Documentação da IA
+
+- [[Roadmap_IA_Ajudante_do_Dia|Roadmap da IA — Ajudante do Dia]]
+
+> [!NOTE]
+> O roadmap da IA registra o estado mais recente do projeto, incluindo Qwen local, Firebase e Google Calendar já configurados. Em caso de divergência com etapas históricas desta página, considere o roadmap da IA como a referência atual para o assistente.

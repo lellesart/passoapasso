@@ -1977,6 +1977,7 @@ h1, h2, h3, h4, h5, h6 {
   line-height: 1.35;
 }
 
+.dashboard-task-item .task-edit,
 .dashboard-task-item .task-delete {
   align-self: center;
 }
@@ -2238,7 +2239,30 @@ h1, h2, h3, h4, h5, h6 {
   transition: color .18s, transform .18s;
 }
 
-.habit-tile:hover .habit-tile-check { color: var(--habit-ink); transform: scale(1.04); }
+.habit-tile-toggle {
+  width: 44px;
+  height: 44px;
+  margin: -8px;
+  flex: 0 0 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: inherit;
+  background: transparent;
+  border: 0;
+  border-radius: 999px;
+  cursor: pointer;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.habit-tile-toggle:hover .habit-tile-check { color: var(--habit-ink); transform: scale(1.06); }
+
+.habit-tile-toggle:focus-visible {
+  outline: 2px solid var(--habit-ink);
+  outline-offset: 2px;
+}
+
+.habit-tile-toggle:active .habit-tile-check { transform: scale(.94); }
 
 .habit-note .habit-note-title { color: var(--habit-ink); }
 .habit-note .habit-note-footer { color: var(--habit-muted); border-top-color: var(--habit-rule); }
@@ -2557,7 +2581,7 @@ h1, h2, h3, h4, h5, h6 {
 
 .note-input {
   min-height: 46px;
-  padding: 8px 0 10px;
+  padding: 8px 12px 10px;
   font-family: "Newsreader", Georgia, serif;
   font-size: 25px;
   font-weight: 500;
@@ -2611,7 +2635,7 @@ h1, h2, h3, h4, h5, h6 {
 
 .note-textarea {
   min-height: 250px;
-  padding: 15px 0;
+  padding: 15px 14px;
   border: 1px solid #d4dcd8 !important;
   border-radius: 3px !important;
   background: #fff !important;
@@ -2621,6 +2645,129 @@ h1, h2, h3, h4, h5, h6 {
 
 .note-textarea:focus { border-color: var(--teal) !important; }
 .note-textarea::placeholder { color: #9aa39f; }
+
+/* Shopping notes: a practical market list that still reads like paper. */
+.shopping-composer {
+  min-height: 170px;
+  padding: 7px 12px 12px;
+  background: #fff;
+  border: 1px solid #d4dcd8;
+  border-radius: 3px;
+}
+
+.note-drawer .shopping-composer { min-height: 250px; padding: 10px 14px 14px; }
+
+.shopping-composer-row {
+  min-height: 42px;
+  display: grid;
+  grid-template-columns: 17px minmax(0, 1fr) 26px;
+  align-items: center;
+  gap: 9px;
+  border-bottom: 1px solid #edf0ee;
+}
+
+.shopping-composer-check,
+.shopping-list-check {
+  width: 16px;
+  height: 16px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 0 0 16px;
+  color: #fff;
+  background: transparent;
+  border: 1px solid #8fa29b;
+  border-radius: 2px;
+}
+
+.shopping-composer-row input {
+  width: 100%;
+  min-width: 0;
+  padding: 8px 2px;
+  color: var(--ink);
+  background: transparent;
+  border: 0;
+  outline: 0;
+  font-size: 14px;
+}
+
+.shopping-composer-row input::placeholder { color: #a1aaa6; }
+
+.shopping-composer-remove {
+  width: 26px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #929c98;
+  background: transparent;
+  border: 0;
+  border-radius: 2px;
+  opacity: 0;
+  transition: color .18s, background .18s, opacity .18s;
+}
+
+.shopping-composer-row:hover .shopping-composer-remove,
+.shopping-composer-remove:focus-visible { opacity: 1; }
+
+.shopping-composer-remove:hover { color: #a85454; background: rgba(168, 84, 84, .08); }
+
+.shopping-composer-add {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-top: 12px;
+  padding: 5px 2px;
+  color: var(--teal);
+  background: transparent;
+  border: 0;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+}
+
+.shopping-composer-add:hover { color: var(--teal-dark); }
+
+.shopping-list {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  white-space: normal;
+}
+
+.shopping-list-item {
+  width: 100%;
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 4px 0;
+  color: #394540;
+  background: transparent;
+  border: 0;
+  text-align: left;
+  font: inherit;
+  line-height: 1.45;
+}
+
+button.shopping-list-item:hover { color: var(--teal-dark); }
+
+.shopping-list-item .shopping-list-check { margin-top: 3px; }
+.shopping-list-item .shopping-list-check:has(svg) { background: var(--teal); border-color: var(--teal); }
+.shopping-list-item .is-checked { color: #82908a; text-decoration: line-through; }
+.shopping-list-empty { color: #8a9590; font-style: italic; }
+
+.shopping-list.is-preview {
+  gap: 3px;
+  margin-top: 9px;
+  overflow: hidden;
+  font-size: 11px;
+}
+
+.shopping-list.is-preview .shopping-list-item { gap: 7px; padding: 1px 0; }
+.shopping-list.is-preview .shopping-list-check { width: 12px; height: 12px; flex-basis: 12px; margin-top: 2px; }
+.shopping-list.is-preview .shopping-list-item:nth-child(n+4) { display: none; }
 
 .note-drawer-actions {
   padding: 18px 38px 24px;
@@ -3678,6 +3825,7 @@ h1, h2, h3, h4, h5, h6 {
   text-decoration-thickness: 1px;
 }
 
+.task-edit,
 .task-delete {
   flex: 0 0 auto;
   margin: -2px -2px 0 0;
@@ -3690,8 +3838,15 @@ h1, h2, h3, h4, h5, h6 {
   transition: color .2s, background .2s, opacity .2s;
 }
 
+.task-note:hover .task-edit,
 .task-note:hover .task-delete,
+.task-edit:focus-visible,
 .task-delete:focus-visible { opacity: 1; }
+
+.task-edit:hover {
+  color: var(--teal);
+  background: rgba(0, 92, 92, .08);
+}
 
 .task-delete:hover {
   color: #a85454;
@@ -3911,6 +4066,36 @@ h1, h2, h3, h4, h5, h6 {
   border-bottom: 1px solid var(--line);
 }
 
+.note-viewer-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.note-viewer-edit {
+  min-height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 10px;
+  color: #66736e;
+  background: transparent;
+  border: 1px solid #d3dcd8;
+  border-radius: 3px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  transition: color .18s, border-color .18s, background .18s;
+}
+
+.note-viewer-edit:hover {
+  color: var(--teal-dark);
+  background: #edf3f1;
+  border-color: #96aca6;
+}
+
 .note-viewer-title {
   max-width: 540px;
   margin: 9px 0 0;
@@ -3932,6 +4117,90 @@ h1, h2, h3, h4, h5, h6 {
   font-size: 16px;
   line-height: 1.75;
   white-space: pre-wrap;
+}
+
+.record-editor {
+  width: min(560px, 100%);
+  max-height: min(760px, 90vh);
+  overflow-y: auto;
+  padding: 30px 34px 28px;
+  color: var(--ink);
+  background: #fbfcfa;
+  border: 1px solid var(--line);
+  border-radius: 3px;
+  box-shadow: 0 24px 70px rgba(24, 38, 36, .18);
+  background-image: radial-gradient(rgba(21, 43, 39, .024) .55px, transparent .55px);
+  background-size: 6px 6px;
+}
+
+.record-editor-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 20px;
+  padding-bottom: 22px;
+  border-bottom: 1px solid var(--line);
+}
+
+.record-editor-header h2 {
+  margin: 7px 0 0;
+  font-family: "Newsreader", Georgia, serif;
+  font-size: 34px;
+  font-weight: 700;
+  letter-spacing: -.03em;
+  line-height: 1;
+}
+
+.record-editor-form,
+.note-edit-form {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+  padding-top: 26px;
+}
+
+.note-edit-form { padding-bottom: 26px; }
+
+.record-editor-field {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.record-editor-field > input,
+.record-editor-field > textarea,
+.note-edit-form .record-editor-field > input,
+.note-edit-form .record-editor-field > textarea {
+  width: 100%;
+  padding: 11px 12px;
+  color: var(--ink);
+  background: #fff;
+  border: 1px solid #d1dad6;
+  border-radius: 3px;
+  outline: 0;
+  box-shadow: none;
+  font-size: 14px;
+}
+
+.record-editor-field > textarea,
+.note-edit-form .record-editor-field > textarea {
+  min-height: 190px;
+  resize: vertical;
+  line-height: 1.65;
+}
+
+.record-editor-field > input:focus,
+.record-editor-field > textarea:focus { border-color: var(--teal); }
+
+.record-editor-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding-top: 4px;
 }
 
 .note-viewer-footer {
@@ -3958,8 +4227,10 @@ h1, h2, h3, h4, h5, h6 {
   .note-drawer-body { padding: 28px 24px 36px; }
   .note-drawer-actions { padding: 16px 24px 20px; }
   .note-drawer-form { gap: 28px; margin-top: 32px; }
-  .task-delete { opacity: .55; }
+  .task-edit, .task-delete { opacity: .55; }
   .note-viewer { padding: 26px 24px 22px; }
+  .record-editor { padding: 26px 24px 22px; }
+  .note-viewer-edit span { display: none; }
   .calendar-toolbar { align-items: flex-end; }
   .calendar-event-panel { padding-left: 0; border-left: 0; border-top: 1px solid var(--line); padding-top: 24px; }
   .calendar-category-option { min-width: 70px; }

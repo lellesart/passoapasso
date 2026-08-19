@@ -1,4 +1,4 @@
-import React, { lazy, Suspense, useRef, useState, useEffect, useMemo } from 'react';
+import React, { lazy, Suspense, useRef, useState, useEffect, useMemo, useCallback } from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
 import { auth, googleProvider, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, db, doc, setDoc, onSnapshot, updateDoc } from './firebase/config';
 import { addEventToGoogleCalendar, deleteEventFromGoogleCalendar } from './firebase/calendarAPI';
@@ -34,11 +34,16 @@ import {
   CloudLightning,
   Snowflake,
   MapPin,
-  Loader2
+  Loader2,
+  Pencil
 } from 'lucide-react';
 
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { Toaster, toast } from 'sonner';
+import { applyConfirmedOrganizerAction, applyOrganizerUndo } from './services/ai/actionExecutor';
+import { syncCalendarActionWithGoogle } from './services/ai/calendarActionSync';
+import { organizerDateKey, toggleDailyHabitCompletion } from './services/ai/habitModel';
+import { appendAuditEntry, createAuditEntry } from './services/ai/actionAudit';
 
 const loadSecondaryViews = () => import('./components/SecondaryViews');
 const GoogleCalendarSyncView = lazy(() => loadSecondaryViews().then(module => ({ default: module.GoogleCalendarSyncView })));
@@ -76,6 +81,13 @@ const CATEGORY_COLORS = {
     button: 'bg-amber-600 hover:bg-amber-700 text-white',
     dot: 'bg-amber-500'
   },
+  Compras: {
+    bg: 'bg-amber-100',
+    badge: 'text-amber-900 font-bold',
+    accent: 'text-amber-700',
+    button: 'bg-amber-600 hover:bg-amber-700 text-white',
+    dot: 'bg-amber-500'
+  },
   'Bem-estar': {
     bg: 'bg-rose-100',
     badge: 'text-rose-900 font-bold',
@@ -94,6 +106,272 @@ const DEFAULT_COLOR = {
 };
 
 const getCategoryStyle = (cat) => CATEGORY_COLORS[cat] || DEFAULT_COLOR;
+
+const NOTE_CATEGORIES = ['Trabalho', 'Pessoal', 'Saúde', 'Estudos', 'Compras'];
+const TASK_CATEGORIES = ['Trabalho', 'Pessoal', 'Saúde', 'Estudos'];
+
+const getShoppingItems = (note) => {
+  if (Array.isArray(note?.items)) return note.items;
+
+  return String(note?.content || '')
+    .split('\n')
+    .map(item => item.replace(/^[\s•*-]+/, '').trim())
+    .filter(Boolean)
+    .map((text, index) => ({
+      id: `${note?.id || 'shopping'}-${index}`,
+      text,
+      checked: false
+    }));
+};
+
+const createShoppingItems = (items, noteId) => items
+  .map(item => item.trim())
+  .filter(Boolean)
+  .map((text, index) => ({ id: `${noteId}-${index}`, text, checked: false }));
+
+const toggleShoppingItemInNotes = (notes, noteId, itemIndex) => notes.map(note => {
+  if (note.id !== noteId) return note;
+
+  const items = getShoppingItems(note).map((item, index) => (
+    index === itemIndex ? { ...item, checked: !item.checked } : item
+  ));
+
+  return { ...note, items };
+});
+
+function ShoppingListComposer({ items, onChange }) {
+  const updateItem = (index, text) => {
+    onChange(items.map((item, itemIndex) => itemIndex === index ? text : item));
+  };
+
+  const addItem = () => onChange([...items, '']);
+
+  const removeItem = (index) => {
+    const nextItems = items.filter((_, itemIndex) => itemIndex !== index);
+    onChange(nextItems.length > 0 ? nextItems : ['']);
+  };
+
+  return (
+    <div className="shopping-composer" aria-label="Itens da lista de compras">
+      {items.map((item, index) => (
+        <div className="shopping-composer-row" key={index}>
+          <span className="shopping-composer-check" aria-hidden="true"></span>
+          <input
+            type="text"
+            value={item}
+            onChange={(event) => updateItem(index, event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key === 'Enter') {
+                event.preventDefault();
+                addItem();
+              }
+            }}
+            placeholder={index === 0 ? 'Adicionar item...' : 'Próximo item...'}
+            aria-label={`Item ${index + 1}`}
+          />
+          <button
+            type="button"
+            onClick={() => removeItem(index)}
+            className="shopping-composer-remove"
+            aria-label={`Remover item ${index + 1}`}
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
+      ))}
+      <button type="button" onClick={addItem} className="shopping-composer-add">
+        <Plus className="w-3.5 h-3.5" />
+        <span>Adicionar item</span>
+      </button>
+    </div>
+  );
+}
+
+function ShoppingListContent({ note, preview = false, onToggleItem }) {
+  const items = getShoppingItems(note);
+
+  if (items.length === 0) {
+    return <p className="shopping-list-empty">A lista ainda não possui itens.</p>;
+  }
+
+  return (
+    <div className={`shopping-list ${preview ? 'is-preview' : ''}`}>
+      {items.map((item, index) => {
+        const content = (
+          <>
+            <span className="shopping-list-check" aria-hidden="true">
+              {item.checked && <Check className="w-3 h-3" />}
+            </span>
+            <span className={item.checked ? 'is-checked' : ''}>{item.text}</span>
+          </>
+        );
+
+        return preview ? (
+          <div className="shopping-list-item" key={item.id || index}>{content}</div>
+        ) : (
+          <button
+            type="button"
+            className="shopping-list-item"
+            key={item.id || index}
+            onClick={() => onToggleItem?.(index)}
+            aria-label={`${item.checked ? 'Desmarcar' : 'Marcar'} ${item.text}`}
+          >
+            {content}
+          </button>
+        );
+      })}
+    </div>
+  );
+}
+
+function TaskEditDialog({ task, onCancel, onSave }) {
+  const [title, setTitle] = useState(task.title || '');
+  const [category, setCategory] = useState(task.category || 'Trabalho');
+  const [dueDate, setDueDate] = useState(task.dueDate || '');
+
+  const handleSubmit = (event) => {
+    event.preventDefault();
+    if (!title.trim()) return;
+    onSave({ ...task, title: title.trim(), category, dueDate: dueDate || null });
+  };
+
+  return (
+    <div className="note-viewer-overlay fixed inset-0 z-50 flex items-center justify-center p-5 sm:p-8">
+      <div className="note-viewer-backdrop fixed inset-0" onClick={onCancel}></div>
+      <article className="record-editor relative z-10" role="dialog" aria-modal="true" aria-labelledby="task-editor-title">
+        <header className="record-editor-header">
+          <div>
+            <span className="note-drawer-kicker">Tarefa ativa · edição</span>
+            <h2 id="task-editor-title">Editar tarefa</h2>
+          </div>
+          <button type="button" onClick={onCancel} className="note-drawer-close" aria-label="Fechar edição da tarefa">
+            <X className="w-5 h-5" />
+          </button>
+        </header>
+        <form onSubmit={handleSubmit} className="record-editor-form">
+          <label className="record-editor-field">
+            <span className="note-label">Título</span>
+            <input value={title} onChange={(event) => setTitle(event.target.value)} autoFocus />
+          </label>
+          <fieldset className="record-editor-field">
+            <legend className="note-label">Categoria</legend>
+            <div className="note-category-list" role="group" aria-label="Categoria da tarefa">
+              {TASK_CATEGORIES.map(option => (
+                <button
+                  key={option}
+                  type="button"
+                  onClick={() => setCategory(option)}
+                  className={`note-category-option ${category === option ? 'is-selected' : ''}`}
+                  aria-pressed={category === option}
+                >
+                  <span className="note-category-dot" />
+                  {option}
+                </button>
+              ))}
+            </div>
+          </fieldset>
+          <label className="record-editor-field">
+            <span className="note-label">Prazo · opcional</span>
+            <input type="date" value={dueDate} onChange={(event) => setDueDate(event.target.value)} />
+          </label>
+          <div className="record-editor-actions">
+            <button type="button" onClick={onCancel} className="note-cancel-button">Cancelar</button>
+            <button type="submit" className="note-save-button">
+              <Save className="w-4 h-4" />
+              <span>Salvar alterações</span>
+            </button>
+          </div>
+        </form>
+      </article>
+    </div>
+  );
+}
+
+function NoteEditForm({ note, onCancel, onSave }) {
+  const [title, setTitle] = useState(note.title || '');
+  const [category, setCategory] = useState(note.category || 'Trabalho');
+  const [content, setContent] = useState(note.content || '');
+  const [shoppingItems, setShoppingItems] = useState(() => {
+    const items = getShoppingItems(note).map(item => item.text);
+    return items.length > 0 ? items : [''];
+  });
+
+  const changeCategory = (nextCategory) => {
+    if (nextCategory === 'Compras' && category !== 'Compras') {
+      const contentItems = content.split('\n').map(item => item.replace(/^[\s•*-]+/, '').trim()).filter(Boolean);
+      setShoppingItems(contentItems.length > 0 ? contentItems : ['']);
+    }
+    if (category === 'Compras' && nextCategory !== 'Compras') {
+      setContent(shoppingItems.map(item => item.trim()).filter(Boolean).join('\n'));
+    }
+    setCategory(nextCategory);
+  };
+
+  const handleSubmit = (event) => {
+    event.preventDefault();
+    if (!title.trim()) return;
+
+    const updatedNote = { ...note, title: title.trim(), category };
+    if (category === 'Compras') {
+      const previousItems = getShoppingItems(note);
+      const items = shoppingItems
+        .map(item => item.trim())
+        .filter(Boolean)
+        .map((text, index) => ({
+          id: previousItems[index]?.id || `${note.id}-${Date.now()}-${index}`,
+          text,
+          checked: Boolean(previousItems[index]?.checked)
+        }));
+      updatedNote.items = items;
+      updatedNote.content = items.map(item => item.text).join('\n');
+    } else {
+      updatedNote.content = content.trim();
+      delete updatedNote.items;
+    }
+    onSave(updatedNote);
+  };
+
+  return (
+    <form onSubmit={handleSubmit} className="note-edit-form">
+      <label className="record-editor-field">
+        <span className="note-label">Título</span>
+        <input value={title} onChange={(event) => setTitle(event.target.value)} autoFocus />
+      </label>
+      <fieldset className="record-editor-field">
+        <legend className="note-label">Categoria</legend>
+        <div className="note-category-list" role="group" aria-label="Categoria da nota">
+          {NOTE_CATEGORIES.map(option => (
+            <button
+              key={option}
+              type="button"
+              onClick={() => changeCategory(option)}
+              className={`note-category-option ${category === option ? 'is-selected' : ''}`}
+              aria-pressed={category === option}
+            >
+              <span className="note-category-dot" />
+              {option}
+            </button>
+          ))}
+        </div>
+      </fieldset>
+      <div className="record-editor-field">
+        <span className="note-label">{category === 'Compras' ? 'Itens' : 'Conteúdo'}</span>
+        {category === 'Compras' ? (
+          <ShoppingListComposer items={shoppingItems} onChange={setShoppingItems} />
+        ) : (
+          <textarea value={content} onChange={(event) => setContent(event.target.value)} rows="8"></textarea>
+        )}
+      </div>
+      <div className="record-editor-actions">
+        <button type="button" onClick={onCancel} className="note-cancel-button">Cancelar</button>
+        <button type="submit" className="note-save-button">
+          <Save className="w-4 h-4" />
+          <span>Salvar alterações</span>
+        </button>
+      </div>
+    </form>
+  );
+}
 
 const getHabitTone = (color = '') => {
   if (color.includes('4A85F6') || color.includes('blue')) return 'blue';
@@ -330,14 +608,22 @@ export default function App() {
             if (data.habits) setHabits(data.habits);
             if (data.notes) setNotes(data.notes);
             if (data.events) setEvents(data.events);
+            if (data.aiActionAudit) {
+              aiActionAuditRef.current = data.aiActionAudit;
+              setAIActionAudit(data.aiActionAudit);
+            }
             if (data.dailyHabitsState) {
-              const today = new Date().toISOString().split('T')[0];
-              if (data.dailyHabitsState.currentDate !== today) {
-                const resetState = { currentDate: today, completed: {} };
+              const today = organizerDateKey();
+              const stateDate = data.dailyHabitsState.lastDate || data.dailyHabitsState.currentDate;
+              if (stateDate !== today) {
+                const resetState = { lastDate: today, completed: {} };
                 setDailyHabitsState(resetState);
                 updateDoc(userRef, { dailyHabitsState: resetState }).catch(console.error);
               } else {
-                setDailyHabitsState(data.dailyHabitsState);
+                setDailyHabitsState({
+                  lastDate: today,
+                  completed: data.dailyHabitsState.completed || {},
+                });
               }
             }
           } else {
@@ -348,9 +634,10 @@ export default function App() {
               notes: INITIAL_NOTES,
               events: INITIAL_EVENTS,
               dailyHabitsState: {
-                currentDate: new Date().toISOString().split('T')[0],
+                lastDate: organizerDateKey(),
                 completed: {}
-              }
+              },
+              aiActionAudit: [],
             };
             setDoc(userRef, initialData);
           }
@@ -389,24 +676,189 @@ export default function App() {
     }
   };
 
-  const syncToFirestore = async (field, data) => {
-    if (!user) return;
+  const syncToFirestore = useCallback(async (field, data) => {
+    if (!user) return { ok: false, error: 'Usuário não autenticado.' };
     try {
       await updateDoc(doc(db, 'users', user.uid), { [field]: data });
+      return { ok: true };
     } catch (e) {
       console.error(`Erro ao sincronizar ${field}:`, e);
+      return { ok: false, error: e.message || `Falha ao sincronizar ${field}.` };
     }
-  };
+  }, [user]);
 
   // ESTADOS PRINCIPAIS
   const [tasks, setTasks] = useState(INITIAL_TASKS);
   const [habits, setHabits] = useState(INITIAL_HABITS);
   const [notes, setNotes] = useState(INITIAL_NOTES);
   const [events, setEvents] = useState(INITIAL_EVENTS);
+  const [, setAIActionAudit] = useState([]);
+  const aiActionAuditRef = useRef([]);
+  const aiUndoActionsRef = useRef(new Map());
+
+  const registerAIUndo = useCallback((undo) => {
+    if (!undo) return null;
+    const now = Date.now();
+    const entries = [...aiUndoActionsRef.current.entries()]
+      .filter(([, value]) => now - value.createdAt < 10 * 60 * 1000)
+      .slice(-9);
+    aiUndoActionsRef.current = new Map(entries);
+    const undoId = `undo-${now}-${Math.random().toString(36).slice(2, 8)}`;
+    aiUndoActionsRef.current.set(undoId, { undo: structuredClone(undo), createdAt: now });
+    return undoId;
+  }, []);
+
+  const recordAIAssistantAudit = useCallback(async (auditData) => {
+    const entry = createAuditEntry(auditData);
+    const nextEntries = appendAuditEntry(aiActionAuditRef.current, entry);
+    aiActionAuditRef.current = nextEntries;
+    setAIActionAudit(nextEntries);
+    const syncResult = await syncToFirestore('aiActionAudit', nextEntries);
+    return { ok: syncResult.ok, entry };
+  }, [syncToFirestore]);
+
+  const executeAIAssistantAction = async (proposal) => {
+    const applied = applyConfirmedOrganizerAction(proposal, {
+      tasks,
+      notes,
+      events,
+      habits,
+      dailyHabitsState,
+      googleCalendarConnected: Boolean(googleAccessToken),
+    });
+    if (!applied.ok) return applied;
+    const withUndo = (result, undo = applied.undo) => ({
+      ...result,
+      undoId: registerAIUndo(undo),
+    });
+
+    if (applied.collection === 'tasks') setTasks(applied.records);
+    if (applied.collection === 'notes') setNotes(applied.records);
+    if (applied.collection === 'events') setEvents(applied.records);
+    if (applied.collection === 'habits') setHabits(applied.records);
+    if (applied.collection === 'dailyHabitsState') setDailyHabitsState(applied.records);
+
+    const syncResult = await syncToFirestore(applied.collection, applied.records);
+    if (!syncResult.ok) {
+      const message = `${applied.message} A alteração ficou local, mas não foi sincronizada com o Firebase.`;
+      toast.error(message);
+      return withUndo({
+        ok: true,
+        collection: applied.collection,
+        message,
+        syncStatus: 'local-only',
+      });
+    }
+
+    if (applied.collection === 'events') {
+      const googleResult = await syncCalendarActionWithGoogle(applied, {
+        accessToken: googleAccessToken,
+      });
+      setEvents(googleResult.records);
+
+      if (googleResult.needsFirestoreResync) {
+        const linkSyncResult = await syncToFirestore('events', googleResult.records);
+        if (!linkSyncResult.ok) {
+          const message = 'Evento criado no Organizador e no Google Calendar, mas o vínculo entre os dois não foi salvo no Firebase.';
+          toast.error(message);
+          return withUndo({ ok: true, collection: 'events', message, syncStatus: 'partial' }, {
+            ...applied.undo,
+            googleOperationSucceeded: googleResult.googleStatus === 'synced',
+          });
+        }
+      }
+
+      if (googleResult.googleStatus === 'local-only') {
+        toast.error(googleResult.message);
+        return withUndo({
+          ok: true,
+          collection: 'events',
+          message: googleResult.message,
+          syncStatus: 'local-only',
+        }, { ...applied.undo, googleOperationSucceeded: false });
+      }
+
+      toast.success(googleResult.message);
+      return withUndo({
+        ok: true,
+        collection: 'events',
+        message: googleResult.message,
+        syncStatus: googleResult.googleStatus,
+      }, {
+        ...applied.undo,
+        googleOperationSucceeded: googleResult.googleStatus === 'synced',
+      });
+    }
+
+    toast.success(applied.message);
+    return withUndo({
+      ok: true,
+      collection: applied.collection,
+      message: applied.message,
+      syncStatus: 'synced',
+    });
+  };
+
+  const undoAIAssistantAction = async (undoId) => {
+    const stored = aiUndoActionsRef.current.get(undoId);
+    if (!stored || Date.now() - stored.createdAt >= 10 * 60 * 1000) {
+      aiUndoActionsRef.current.delete(undoId);
+      return { ok: false, error: 'O prazo para desfazer esta ação expirou.' };
+    }
+
+    const undone = applyOrganizerUndo(stored.undo, {
+      tasks,
+      notes,
+      events,
+      habits,
+      dailyHabitsState,
+    });
+    if (!undone.ok) return undone;
+
+    if (undone.collection === 'tasks') setTasks(undone.records);
+    if (undone.collection === 'notes') setNotes(undone.records);
+    if (undone.collection === 'events') setEvents(undone.records);
+    if (undone.collection === 'habits') setHabits(undone.records);
+    if (undone.collection === 'dailyHabitsState') setDailyHabitsState(undone.records);
+
+    const firebaseResult = await syncToFirestore(undone.collection, undone.records);
+    if (!firebaseResult.ok) {
+      aiUndoActionsRef.current.delete(undoId);
+      const message = `${undone.message} A reversão ficou local, mas não foi sincronizada com o Firebase.`;
+      toast.error(message);
+      return { ok: true, collection: undone.collection, message, syncStatus: 'local-only' };
+    }
+
+    if (undone.collection === 'events' && undone.externalOperation) {
+      const googleResult = await syncCalendarActionWithGoogle(undone, { accessToken: googleAccessToken });
+      setEvents(googleResult.records);
+      if (googleResult.needsFirestoreResync) {
+        const linkSyncResult = await syncToFirestore('events', googleResult.records);
+        if (!linkSyncResult.ok) {
+          aiUndoActionsRef.current.delete(undoId);
+          const message = 'Alteração desfeita no Organizador e no Google Calendar, mas o novo vínculo não foi salvo no Firebase.';
+          toast.error(message);
+          return { ok: true, collection: 'events', message, syncStatus: 'partial' };
+        }
+      }
+      aiUndoActionsRef.current.delete(undoId);
+      if (googleResult.googleStatus === 'local-only') {
+        toast.error(googleResult.message);
+        return { ok: true, collection: 'events', message: googleResult.message, syncStatus: 'local-only' };
+      }
+      const message = 'Alteração desfeita no Organizador e no Google Calendar.';
+      toast.success(message);
+      return { ok: true, collection: 'events', message, syncStatus: 'synced' };
+    }
+
+    aiUndoActionsRef.current.delete(undoId);
+    toast.success(undone.message);
+    return { ok: true, collection: undone.collection, message: undone.message, syncStatus: 'synced' };
+  };
 
   // Estado para controlo dos Hábitos Diários e data da última atualização
   const [dailyHabitsState, setDailyHabitsState] = useState(() => {
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = organizerDateKey();
     return {
       lastDate: todayStr,
       completed: {
@@ -417,36 +869,35 @@ export default function App() {
       }
     };
   });
+  const dailyHabitsStateRef = useRef(dailyHabitsState);
+
+  useEffect(() => {
+    dailyHabitsStateRef.current = dailyHabitsState;
+  }, [dailyHabitsState]);
 
   // Efeito para verificar se o dia mudou e zerar os hábitos
   useEffect(() => {
-    const todayStr = new Date().toISOString().split('T')[0];
+    const todayStr = organizerDateKey();
     if (dailyHabitsState.lastDate !== todayStr) {
-      setDailyHabitsState({
+      const resetState = {
         lastDate: todayStr,
-        completed: {
-          h_treino: false,
-          h_dieta: false,
-          h_cardio: false,
-          h_estudo: false
-        }
-      });
-    }
-  }, [dailyHabitsState.lastDate]);
-
-  const toggleDailyHabit = (habitId) => {
-    setDailyHabitsState(prev => {
-      const newState = {
-        ...prev,
-        completed: {
-          ...prev.completed,
-          [habitId]: !prev.completed[habitId]
-        }
+        completed: {},
       };
-      syncToFirestore('dailyHabitsState', newState);
-      return newState;
-    });
-  };
+      setDailyHabitsState(resetState);
+      syncToFirestore('dailyHabitsState', resetState);
+    }
+  }, [dailyHabitsState.lastDate, syncToFirestore]);
+
+  const toggleDailyHabit = useCallback((habitId) => {
+    const newState = toggleDailyHabitCompletion(
+      dailyHabitsStateRef.current,
+      habitId,
+      organizerDateKey()
+    );
+    dailyHabitsStateRef.current = newState;
+    setDailyHabitsState(newState);
+    void syncToFirestore('dailyHabitsState', newState);
+  }, [syncToFirestore]);
 
   const navItems = [
     { id: 'dashboard', label: 'Painel Principal' },
@@ -772,7 +1223,12 @@ export default function App() {
             habits={habits}
             notes={notes}
             events={events}
+            dailyHabitsState={dailyHabitsState}
             user={user}
+            googleCalendarConnected={Boolean(googleAccessToken)}
+            onExecuteAction={executeAIAssistantAction}
+            onUndoAction={undoAIAssistantAction}
+            onAuditAction={recordAIAssistantAudit}
           />
         </Suspense>
       )}
@@ -856,21 +1312,31 @@ function WeeklyCalendarPreview({ events }) {
 // ==========================================
 // 1. VISTA DO PAINEL PRINCIPAL (DASHBOARD NOTION)
 // ==========================================
-function TaskNoteContent({ task, onToggle, onDelete, completed = false }) {
+function TaskNoteContent({ task, onToggle, onEdit, onDelete, completed = false, showStatusAction = true }) {
   return (
     <div className="task-note-layout">
-      <button
-        onPointerDown={(e) => e.stopPropagation()}
-        onClick={onToggle}
-        className="task-check"
-        aria-label={completed ? 'Reabrir tarefa' : 'Concluir tarefa'}
-      >
-        {completed ? <CheckCircle2 className="w-5 h-5" /> : <Circle className="w-5 h-5" />}
-      </button>
+      {showStatusAction && (
+        <button
+          onPointerDown={(e) => e.stopPropagation()}
+          onClick={onToggle}
+          className="task-check"
+          aria-label={completed ? 'Reabrir tarefa' : 'Concluir tarefa'}
+        >
+          {completed ? <CheckCircle2 className="w-5 h-5" /> : <Circle className="w-5 h-5" />}
+        </button>
+      )}
       <div className="task-note-copy">
         <span className="task-note-category">{task.category}</span>
         <p className={`task-note-title ${completed ? 'task-note-title-complete' : ''}`}>{task.title}</p>
       </div>
+      <button
+        onPointerDown={(e) => e.stopPropagation()}
+        onClick={onEdit}
+        className="task-edit"
+        aria-label="Editar tarefa"
+      >
+        <Pencil className="w-4 h-4" />
+      </button>
       <button
         onPointerDown={(e) => e.stopPropagation()}
         onClick={onDelete}
@@ -898,25 +1364,14 @@ function DashboardView({
   // Estado para controlar a visibilidade do Drawer de escrita de nota
   const [isNoteDrawerOpen, setIsNoteDrawerOpen] = useState(false);
   const [selectedNote, setSelectedNote] = useState(null);
+  const [editingNote, setEditingNote] = useState(null);
+  const [editingTask, setEditingTask] = useState(null);
   
   // Estados para os campos da nova nota
   const [newNoteTitle, setNewNoteTitle] = useState('');
   const [newNoteContent, setNewNoteContent] = useState('');
   const [newNoteCategory, setNewNoteCategory] = useState('Trabalho');
-
-  const toggleTaskStatus = (taskId) => {
-    const updatedTasks = tasks.map(t => {
-      if (t.id === taskId) {
-        return {
-          ...t,
-          status: t.status === 'a_fazer' ? 'em_curso' : t.status === 'em_curso' ? 'concluido' : 'a_fazer'
-        };
-      }
-      return t;
-    });
-    setTasks(updatedTasks);
-    if(syncToFirestore) syncToFirestore('tasks', updatedTasks);
-  };
+  const [newShoppingItems, setNewShoppingItems] = useState(['']);
 
   const onDragEnd = (result) => {
     if (!result.destination) return;
@@ -957,21 +1412,53 @@ function DashboardView({
   const handleSaveNote = (e) => {
     e.preventDefault();
     if (!newNoteTitle.trim()) return;
+    const noteId = Date.now().toString();
+    const shoppingItems = newNoteCategory === 'Compras'
+      ? createShoppingItems(newShoppingItems, noteId)
+      : null;
     const newNote = {
-      id: Date.now().toString(),
-      title: newNoteTitle,
-      content: newNoteContent,
-      category: newNoteCategory
+      id: noteId,
+      title: newNoteTitle.trim(),
+      content: shoppingItems ? shoppingItems.map(item => item.text).join('\n') : newNoteContent.trim(),
+      category: newNoteCategory,
+      ...(shoppingItems ? { items: shoppingItems } : {})
     };
     const updatedNotes = [newNote, ...notes];
     setNotes(updatedNotes);
     if(syncToFirestore) syncToFirestore('notes', updatedNotes);
     setNewNoteTitle('');
     setNewNoteContent('');
+    setNewShoppingItems(['']);
+    setNewNoteCategory('Trabalho');
     setIsNoteDrawerOpen(false);
+    toast.success(newNoteCategory === 'Compras' ? 'Lista de compras criada!' : 'Nota criada com sucesso!');
   };
 
-  const availableCategories = ['Trabalho', 'Pessoal', 'Saúde', 'Estudos'];
+  const handleToggleShoppingItem = (noteId, itemIndex) => {
+    const updatedNotes = toggleShoppingItemInNotes(notes, noteId, itemIndex);
+    setNotes(updatedNotes);
+    setSelectedNote(updatedNotes.find(note => note.id === noteId) || null);
+    if(syncToFirestore) syncToFirestore('notes', updatedNotes);
+  };
+
+  const handleUpdateTask = (updatedTask) => {
+    const updatedTasks = tasks.map(task => task.id === updatedTask.id ? updatedTask : task);
+    setTasks(updatedTasks);
+    if(syncToFirestore) syncToFirestore('tasks', updatedTasks);
+    setEditingTask(null);
+    toast.success('Tarefa atualizada com sucesso!');
+  };
+
+  const handleUpdateNote = (updatedNote) => {
+    const updatedNotes = notes.map(note => note.id === updatedNote.id ? updatedNote : note);
+    setNotes(updatedNotes);
+    setSelectedNote(updatedNote);
+    setEditingNote(null);
+    if(syncToFirestore) syncToFirestore('notes', updatedNotes);
+    toast.success(updatedNote.category === 'Compras' ? 'Lista atualizada com sucesso!' : 'Nota atualizada com sucesso!');
+  };
+
+  const availableCategories = NOTE_CATEGORIES;
   
   const todayLabel = new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'long', year: 'numeric' }).format(new Date());
 
@@ -1033,8 +1520,7 @@ function DashboardView({
             return (
               <div
                 key={habit.id}
-                onClick={() => toggleDailyHabit(habit.id)}
-                className={`habit-tile habit-tone-${habitTone} p-4 rounded-2xl flex items-center justify-between transition-all cursor-pointer select-none group ${
+                className={`habit-tile habit-tone-${habitTone} p-4 rounded-2xl flex items-center justify-between transition-all select-none group ${
                   isDone 
                     ? 'is-done'
                     : 'hover:shadow-lg hover:-transtone-y-0.5'
@@ -1052,13 +1538,21 @@ function DashboardView({
                 </div>
 
                 {/* Ação (Check) */}
-                <div>
+                <button
+                  type="button"
+                  className="habit-tile-toggle"
+                  onClick={() => toggleDailyHabit(habit.id)}
+                  aria-pressed={isDone}
+                  aria-label={isDone
+                    ? `Desmarcar o hábito ${habit.name}`
+                    : `Marcar o hábito ${habit.name} como concluído`}
+                >
                   {isDone ? (
                     <CheckCircle2 className="habit-tile-check is-complete w-7 h-7" />
                   ) : (
                     <Circle className="habit-tile-check w-7 h-7" />
                   )}
-                </div>
+                </button>
               </div>
             );
           })}
@@ -1113,7 +1607,8 @@ function DashboardView({
                             >
                               <TaskNoteContent
                                 task={t}
-                                onToggle={() => toggleTaskStatus(t.id)}
+                                showStatusAction={false}
+                                onEdit={() => setEditingTask(t)}
                                 onDelete={() => {
                                   const updatedTasks = tasks.map(task => task.id === t.id ? { ...task, deleted: true } : task);
                                   setTasks(updatedTasks);
@@ -1168,7 +1663,8 @@ function DashboardView({
                             >
                               <TaskNoteContent
                                 task={t}
-                                onToggle={() => toggleTaskStatus(t.id)}
+                                showStatusAction={false}
+                                onEdit={() => setEditingTask(t)}
                                 onDelete={() => {
                                   const updatedTasks = tasks.map(task => task.id === t.id ? { ...task, deleted: true } : task);
                                   setTasks(updatedTasks);
@@ -1224,7 +1720,8 @@ function DashboardView({
                               <TaskNoteContent
                                 task={t}
                                 completed
-                                onToggle={() => toggleTaskStatus(t.id)}
+                                showStatusAction={false}
+                                onEdit={() => setEditingTask(t)}
                                 onDelete={() => {
                                   const updatedTasks = tasks.map(task => task.id === t.id ? { ...task, deleted: true } : task);
                                   setTasks(updatedTasks);
@@ -1273,7 +1770,11 @@ function DashboardView({
                   <span className="note-preview-category">{note.category}</span>
                   <span className="note-preview-open"><span>Ver nota</span><ChevronRight className="w-3 h-3" /></span>
                   <h5 className="font-bold text-stone-900 text-sm">{note.title}</h5>
-                  <p className="text-xs text-stone-800 leading-relaxed whitespace-pre-line">{note.content}</p>
+                  {note.category === 'Compras' ? (
+                    <ShoppingListContent note={note} preview />
+                  ) : (
+                    <p className="text-xs text-stone-800 leading-relaxed whitespace-pre-line">{note.content}</p>
+                  )}
                 </button>
               );
             })}
@@ -1297,7 +1798,7 @@ function DashboardView({
         <div className="note-viewer-overlay fixed inset-0 z-50 flex items-center justify-center p-5 sm:p-8">
           <div
             className="note-viewer-backdrop fixed inset-0"
-            onClick={() => setSelectedNote(null)}
+            onClick={() => { setSelectedNote(null); setEditingNote(null); }}
           ></div>
 
           <article className="note-viewer relative z-10" role="dialog" aria-modal="true" aria-labelledby="note-viewer-title">
@@ -1306,19 +1807,38 @@ function DashboardView({
                 <span className="note-drawer-kicker">Nota ativa · {selectedNote.category}</span>
                 <h2 id="note-viewer-title" className="note-viewer-title">{selectedNote.title}</h2>
               </div>
-              <button
-                type="button"
-                onClick={() => setSelectedNote(null)}
-                className="note-drawer-close"
-                aria-label="Fechar visualização da nota"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="note-viewer-header-actions">
+                {!editingNote && (
+                  <button type="button" onClick={() => setEditingNote(selectedNote)} className="note-viewer-edit" aria-label="Editar nota">
+                    <Pencil className="w-4 h-4" />
+                    <span>Editar</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => { setSelectedNote(null); setEditingNote(null); }}
+                  className="note-drawer-close"
+                  aria-label="Fechar visualização da nota"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </header>
             <div className="editorial-rule"></div>
-            <div className="note-viewer-content">
-              {selectedNote.content || 'Esta nota ainda não possui conteúdo.'}
-            </div>
+            {editingNote ? (
+              <NoteEditForm key={editingNote.id} note={editingNote} onCancel={() => setEditingNote(null)} onSave={handleUpdateNote} />
+            ) : (
+              <div className="note-viewer-content">
+                {selectedNote.category === 'Compras' ? (
+                  <ShoppingListContent
+                    note={selectedNote}
+                    onToggleItem={(itemIndex) => handleToggleShoppingItem(selectedNote.id, itemIndex)}
+                  />
+                ) : (
+                  selectedNote.content || 'Esta nota ainda não possui conteúdo.'
+                )}
+              </div>
+            )}
             <footer className="note-viewer-footer">Passo a passo · registro pessoal</footer>
           </article>
         </div>
@@ -1388,15 +1908,19 @@ function DashboardView({
 
                 <div className="note-field note-content-field">
                   <label className="note-label">
-                    Conteúdo
+                    {newNoteCategory === 'Compras' ? 'Itens' : 'Conteúdo'}
                   </label>
-                  <textarea
-                    placeholder="Escreva suas notas ou detalhes aqui..."
-                    rows="10"
-                    value={newNoteContent}
-                    onChange={(e) => setNewNoteContent(e.target.value)}
-                    className="note-textarea"
-                  ></textarea>
+                  {newNoteCategory === 'Compras' ? (
+                    <ShoppingListComposer items={newShoppingItems} onChange={setNewShoppingItems} />
+                  ) : (
+                    <textarea
+                      placeholder="Escreva suas notas ou detalhes aqui..."
+                      rows="10"
+                      value={newNoteContent}
+                      onChange={(e) => setNewNoteContent(e.target.value)}
+                      className="note-textarea"
+                    ></textarea>
+                  )}
                 </div>
               </form>
             </div>
@@ -1420,6 +1944,15 @@ function DashboardView({
             </div>
           </div>
         </div>
+      )}
+
+      {editingTask && (
+        <TaskEditDialog
+          key={editingTask.id}
+          task={editingTask}
+          onCancel={() => setEditingTask(null)}
+          onSave={handleUpdateTask}
+        />
       )}
 
     </div>
@@ -1639,6 +2172,7 @@ function TasksView({ tasks, setTasks, syncToFirestore }) {
   const [newTaskTitle, setNewTaskTitle] = useState('');
   const [newTaskCategory, setNewTaskCategory] = useState('Trabalho');
   const [newTaskDueDate, setNewTaskDueDate] = useState('');
+  const [editingTask, setEditingTask] = useState(null);
 
   const addTask = (e) => {
     e.preventDefault();
@@ -1656,6 +2190,14 @@ function TasksView({ tasks, setTasks, syncToFirestore }) {
     setNewTaskTitle('');
     setNewTaskDueDate('');
     toast.success('Tarefa criada com sucesso!');
+  };
+
+  const handleUpdateTask = (updatedTask) => {
+    const updatedTasks = tasks.map(task => task.id === updatedTask.id ? updatedTask : task);
+    setTasks(updatedTasks);
+    if(syncToFirestore) syncToFirestore('tasks', updatedTasks);
+    setEditingTask(null);
+    toast.success('Tarefa atualizada com sucesso!');
   };
 
   return (
@@ -1707,6 +2249,7 @@ function TasksView({ tasks, setTasks, syncToFirestore }) {
                   <TaskNoteContent
                     task={t}
                     completed={statusKey === 'concluido'}
+                    onEdit={() => setEditingTask(t)}
                     onToggle={() => {
                       const nextStatus = statusKey === 'a_fazer' ? 'em_curso' : statusKey === 'em_curso' ? 'concluido' : 'a_fazer';
                       const updatedTasks = tasks.map(task => task.id === t.id ? { ...task, status: nextStatus } : task);
@@ -1726,6 +2269,14 @@ function TasksView({ tasks, setTasks, syncToFirestore }) {
           </div>
         ))}
       </div>
+      {editingTask && (
+        <TaskEditDialog
+          key={editingTask.id}
+          task={editingTask}
+          onCancel={() => setEditingTask(null)}
+          onSave={handleUpdateTask}
+        />
+      )}
     </div>
   );
 }
@@ -1889,19 +2440,26 @@ function HabitsView({ habits, setHabits, syncToFirestore }) {
 function NotesView({ notes, setNotes, syncToFirestore }) {
   const [newNoteTitle, setNewNoteTitle] = useState('');
   const [newNoteContent, setNewNoteContent] = useState('');
+  const [newShoppingItems, setNewShoppingItems] = useState(['']);
   const [newNoteCategory, setNewNoteCategory] = useState('Trabalho');
   const [selectedNote, setSelectedNote] = useState(null);
-  const availableCategories = ['Trabalho', 'Pessoal', 'Saúde', 'Estudos'];
+  const [editingNote, setEditingNote] = useState(null);
+  const availableCategories = NOTE_CATEGORIES;
 
   const handleAddNote = (e) => {
     e.preventDefault();
     if (!newNoteTitle.trim()) return;
 
+    const noteId = Date.now().toString();
+    const shoppingItems = newNoteCategory === 'Compras'
+      ? createShoppingItems(newShoppingItems, noteId)
+      : null;
     const newNote = {
-      id: Date.now().toString(),
+      id: noteId,
       title: newNoteTitle.trim(),
-      content: newNoteContent.trim(),
-      category: newNoteCategory
+      content: shoppingItems ? shoppingItems.map(item => item.text).join('\n') : newNoteContent.trim(),
+      category: newNoteCategory,
+      ...(shoppingItems ? { items: shoppingItems } : {})
     };
 
     const updatedNotes = [newNote, ...notes];
@@ -1909,8 +2467,25 @@ function NotesView({ notes, setNotes, syncToFirestore }) {
     if(syncToFirestore) syncToFirestore('notes', updatedNotes);
     setNewNoteTitle('');
     setNewNoteContent('');
+    setNewShoppingItems(['']);
     setNewNoteCategory('Trabalho');
-    toast.success('Nota criada com sucesso!');
+    toast.success(newNoteCategory === 'Compras' ? 'Lista de compras criada!' : 'Nota criada com sucesso!');
+  };
+
+  const handleToggleShoppingItem = (noteId, itemIndex) => {
+    const updatedNotes = toggleShoppingItemInNotes(notes, noteId, itemIndex);
+    setNotes(updatedNotes);
+    setSelectedNote(updatedNotes.find(note => note.id === noteId) || null);
+    if(syncToFirestore) syncToFirestore('notes', updatedNotes);
+  };
+
+  const handleUpdateNote = (updatedNote) => {
+    const updatedNotes = notes.map(note => note.id === updatedNote.id ? updatedNote : note);
+    setNotes(updatedNotes);
+    setSelectedNote(updatedNote);
+    setEditingNote(null);
+    if(syncToFirestore) syncToFirestore('notes', updatedNotes);
+    toast.success(updatedNote.category === 'Compras' ? 'Lista atualizada com sucesso!' : 'Nota atualizada com sucesso!');
   };
 
   const activeNotes = notes.filter(n => !n.deleted);
@@ -1932,13 +2507,17 @@ function NotesView({ notes, setNotes, syncToFirestore }) {
               onChange={(e) => setNewNoteTitle(e.target.value)}
               className="notes-title-field"
             />
-            <textarea
-              placeholder="Escreva suas notas ou detalhes aqui..."
-              rows="7"
-              value={newNoteContent}
-              onChange={(e) => setNewNoteContent(e.target.value)}
-              className="notes-content-field"
-            ></textarea>
+            {newNoteCategory === 'Compras' ? (
+              <ShoppingListComposer items={newShoppingItems} onChange={setNewShoppingItems} />
+            ) : (
+              <textarea
+                placeholder="Escreva suas notas ou detalhes aqui..."
+                rows="7"
+                value={newNoteContent}
+                onChange={(e) => setNewNoteContent(e.target.value)}
+                className="notes-content-field"
+              ></textarea>
+            )}
           </div>
 
           <aside className="notes-meta-fields">
@@ -1984,7 +2563,11 @@ function NotesView({ notes, setNotes, syncToFirestore }) {
                   >
                     <span className="note-preview-category">{n.category}</span>
                     <h4>{n.title}</h4>
-                    <p>{n.content || 'Esta nota ainda não possui conteúdo.'}</p>
+                    {n.category === 'Compras' ? (
+                      <ShoppingListContent note={n} preview />
+                    ) : (
+                      <p>{n.content || 'Esta nota ainda não possui conteúdo.'}</p>
+                    )}
                   </button>
                   <button
                     type="button"
@@ -2012,7 +2595,7 @@ function NotesView({ notes, setNotes, syncToFirestore }) {
         <div className="note-viewer-overlay fixed inset-0 z-50 flex items-center justify-center p-5 sm:p-8">
           <div
             className="note-viewer-backdrop fixed inset-0"
-            onClick={() => setSelectedNote(null)}
+            onClick={() => { setSelectedNote(null); setEditingNote(null); }}
           ></div>
 
           <article className="note-viewer relative z-10" role="dialog" aria-modal="true" aria-labelledby="notes-viewer-title">
@@ -2021,19 +2604,38 @@ function NotesView({ notes, setNotes, syncToFirestore }) {
                 <span className="note-drawer-kicker">Nota ativa · {selectedNote.category}</span>
                 <h2 id="notes-viewer-title" className="note-viewer-title">{selectedNote.title}</h2>
               </div>
-              <button
-                type="button"
-                onClick={() => setSelectedNote(null)}
-                className="note-drawer-close"
-                aria-label="Fechar visualização da nota"
-              >
-                <X className="w-5 h-5" />
-              </button>
+              <div className="note-viewer-header-actions">
+                {!editingNote && (
+                  <button type="button" onClick={() => setEditingNote(selectedNote)} className="note-viewer-edit" aria-label="Editar nota">
+                    <Pencil className="w-4 h-4" />
+                    <span>Editar</span>
+                  </button>
+                )}
+                <button
+                  type="button"
+                  onClick={() => { setSelectedNote(null); setEditingNote(null); }}
+                  className="note-drawer-close"
+                  aria-label="Fechar visualização da nota"
+                >
+                  <X className="w-5 h-5" />
+                </button>
+              </div>
             </header>
             <div className="editorial-rule"></div>
-            <div className="note-viewer-content">
-              {selectedNote.content || 'Esta nota ainda não possui conteúdo.'}
-            </div>
+            {editingNote ? (
+              <NoteEditForm key={editingNote.id} note={editingNote} onCancel={() => setEditingNote(null)} onSave={handleUpdateNote} />
+            ) : (
+              <div className="note-viewer-content">
+                {selectedNote.category === 'Compras' ? (
+                  <ShoppingListContent
+                    note={selectedNote}
+                    onToggleItem={(itemIndex) => handleToggleShoppingItem(selectedNote.id, itemIndex)}
+                  />
+                ) : (
+                  selectedNote.content || 'Esta nota ainda não possui conteúdo.'
+                )}
+              </div>
+            )}
             <footer className="note-viewer-footer">Passo a passo · registro pessoal</footer>
           </article>
         </div>

@@ -2,6 +2,16 @@
  * Service to communicate with Local LLM (Ollama)
  */
 
+import { buildAssistantPersona } from './ai/assistantPersona.js';
+import { buildOrganizerSnapshot, buildOrganizerSummary } from './ai/organizerContext.js';
+import {
+  READ_ONLY_TOOL_SCHEMAS,
+  WRITE_TOOL_NAMES,
+} from './ai/toolSchemas.js';
+import { executeReadOnlyTool } from './ai/readTools.js';
+import { buildActionProposal } from './ai/actionValidation.js';
+import { selectOrganizerTools } from './ai/toolRegistry.js';
+
 const DEFAULT_OLLAMA_HOST = 'http://localhost:11434';
 
 /**
@@ -47,37 +57,18 @@ export async function checkOllamaStatus(host = DEFAULT_OLLAMA_HOST) {
   }
 }
 
-/**
- * Sends a chat completion request to Ollama with streaming response support.
- * 
- * @param {Object} options
- * @param {Array<{role: string, content: string}>} options.messages - Array of chat messages
- * @param {string} [options.systemContext] - System instructions with app context
- * @param {string} [options.model] - Target Ollama model name (e.g. 'llama3.2', 'qwen2.5')
- * @param {function(string): void} [options.onChunk] - Callback for streaming text chunks
- * @param {string} [options.host] - Ollama API host address
- * @param {AbortSignal} [options.signal] - Abort controller signal
- * @returns {Promise<string>} Full response text
- */
-export async function sendChatMessageStream({
+async function streamOllamaChat({
   messages,
-  systemContext = '',
-  model = 'llama3.2',
+  model = 'qwen3.5:4b',
+  tools = null,
   onChunk = null,
   host = DEFAULT_OLLAMA_HOST,
   signal = null,
+  temperature = 0.2,
+  numPredict = 1024,
 }) {
-  const formattedMessages = [];
-
-  if (systemContext) {
-    formattedMessages.push({
-      role: 'system',
-      content: systemContext,
-    });
-  }
-
-  formattedMessages.push(...messages);
-
+  let fullText = '';
+  let toolCalls = [];
   try {
     const response = await fetch(`${host}/api/chat`, {
       method: 'POST',
@@ -86,11 +77,15 @@ export async function sendChatMessageStream({
       },
       signal,
       body: JSON.stringify({
-        model: model,
-        messages: formattedMessages,
+        model,
+        messages,
         stream: true,
+        think: false,
+        ...(tools?.length ? { tools } : {}),
         options: {
-          temperature: 0.2,
+          temperature,
+          num_ctx: 8192,
+          num_predict: numPredict,
         },
       }),
     });
@@ -106,8 +101,25 @@ export async function sendChatMessageStream({
 
     const reader = response.body.getReader();
     const decoder = new TextDecoder('utf-8');
-    let fullText = '';
     let buffer = '';
+
+    const processLine = (line) => {
+      const trimmed = line.trim();
+      if (!trimmed) return;
+      try {
+        const parsed = JSON.parse(trimmed);
+        const chunkContent = parsed.message?.content || '';
+        if (chunkContent) {
+          fullText += chunkContent;
+          onChunk?.(chunkContent, fullText);
+        }
+        if (Array.isArray(parsed.message?.tool_calls) && parsed.message.tool_calls.length > 0) {
+          toolCalls = parsed.message.tool_calls;
+        }
+      } catch {
+        // A linha incompleta permanece no buffer e será processada no próximo chunk.
+      }
+    };
 
     while (true) {
       const { done, value } = await reader.read();
@@ -115,133 +127,227 @@ export async function sendChatMessageStream({
 
       buffer += decoder.decode(value, { stream: true });
       const lines = buffer.split('\n');
-      
-      // Keep the last incomplete line in buffer
       buffer = lines.pop() || '';
-
-      for (const line of lines) {
-        const trimmed = line.trim();
-        if (!trimmed) continue;
-
-        try {
-          const parsed = JSON.parse(trimmed);
-          const chunkContent = parsed.message?.content || '';
-          if (chunkContent) {
-            fullText += chunkContent;
-            if (onChunk) {
-              onChunk(chunkContent, fullText);
-            }
-          }
-        } catch {
-          // Ignore partial line JSON errors
-        }
-      }
+      lines.forEach(processLine);
     }
 
-    // Process remaining buffer
-    if (buffer.trim()) {
-      try {
-        const parsed = JSON.parse(buffer.trim());
-        const chunkContent = parsed.message?.content || '';
-        if (chunkContent) {
-          fullText += chunkContent;
-          if (onChunk) {
-            onChunk(chunkContent, fullText);
-          }
-        }
-      } catch {
-        // ignore
-      }
-    }
+    if (buffer.trim()) processLine(buffer);
 
-    return fullText;
+    return {
+      message: {
+        role: 'assistant',
+        content: fullText,
+        ...(toolCalls.length ? { tool_calls: toolCalls } : {}),
+      },
+      content: fullText,
+      toolCalls,
+    };
   } catch (error) {
     if (error.name === 'AbortError') {
-      return fullText || '';
+      return {
+        message: { role: 'assistant', content: fullText },
+        content: fullText,
+        toolCalls: [],
+      };
     }
     throw error;
   }
 }
 
 /**
- * Builds the system context using only data stored in the organizer.
+ * Sends a regular chat completion request with streaming text.
  */
-export function buildSystemContext({ tasks = [], habits = [], notes = [], events = [], user = null }) {
-  const userName = user?.displayName || user?.email?.split('@')[0] || 'Usuário';
-  const today = new Date();
-  const todayKey = [
-    today.getFullYear(),
-    String(today.getMonth() + 1).padStart(2, '0'),
-    String(today.getDate()).padStart(2, '0'),
-  ].join('-');
-  const todayStr = today.toLocaleDateString('pt-BR', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+export async function sendChatMessageStream({
+  messages,
+  systemContext = '',
+  model = 'qwen3.5:4b',
+  onChunk = null,
+  host = DEFAULT_OLLAMA_HOST,
+  signal = null,
+}) {
+  const formattedMessages = systemContext
+    ? [{ role: 'system', content: systemContext }, ...messages]
+    : [...messages];
+  const response = await streamOllamaChat({
+    messages: formattedMessages,
+    model,
+    onChunk,
+    host,
+    signal,
+  });
+  return response.content;
+}
 
-  // Format pending tasks
-  const pendingTasks = tasks.filter(t => !t.completed && !t.deleted);
-  const tasksSummary = pendingTasks.length > 0
-    ? pendingTasks.map(t => `- [${t.priority || 'Normal'}] ${t.title}${t.dueDate ? ` (Para: ${t.dueDate})` : ''}`).join('\n')
-    : 'Nenhuma tarefa pendente no momento.';
+/**
+ * Runs a bounded read-only tool loop. The model can request only the schemas in
+ * READ_ONLY_TOOL_SCHEMAS and every call is executed against the latest React state.
+ */
+async function runOrganizerAgent({
+  messages,
+  organizerData,
+  systemContext = '',
+  model = 'qwen3.5:4b',
+  onChunk = null,
+  onToolCall = null,
+  host = DEFAULT_OLLAMA_HOST,
+  signal = null,
+  maxToolCalls = 3,
+  allowWrites = false,
+}) {
+  const conversation = systemContext
+    ? [{ role: 'system', content: systemContext }, ...messages]
+    : [...messages];
+  let executedToolCalls = 0;
+  let hasUniqueEventLookup = false;
+  let hasUniqueHabitLookup = false;
+  let hasUniqueTaskLookup = false;
+  let hasUniqueNoteLookup = false;
+  const availableTools = allowWrites
+    ? selectOrganizerTools(messages, { allowWrites: true })
+    : READ_ONLY_TOOL_SCHEMAS;
 
-  // Format active habits
-  const activeHabits = habits.filter(h => !h.deleted);
-  const habitsSummary = activeHabits.length > 0
-    ? activeHabits.map(h => `- ${h.title} (Frequência: ${h.frequency || 'Diário'})`).join('\n')
-    : 'Nenhum hábito cadastrado.';
-
-  // Format recent notes summary
-  const recentNotes = notes.filter(n => !n.deleted).slice(0, 5);
-  const notesSummary = recentNotes.length > 0
-    ? recentNotes.map(n => `- ${n.title || 'Sem título'}: ${n.content ? n.content.substring(0, 80) + '...' : ''}`).join('\n')
-    : 'Nenhuma nota recente.';
-
-  // Calendar access is intentionally limited to events saved in the organizer.
-  const organizerEvents = events
-    .filter(event => !event.deleted && event.date)
-    .sort((first, second) => {
-      const firstDateTime = `${first.date}T${first.time || '00:00'}`;
-      const secondDateTime = `${second.date}T${second.time || '00:00'}`;
-      return firstDateTime.localeCompare(secondDateTime);
+  for (let iteration = 0; iteration < maxToolCalls + 2; iteration += 1) {
+    const tools = executedToolCalls < maxToolCalls ? availableTools : null;
+    const response = await streamOllamaChat({
+      messages: conversation,
+      model,
+      tools,
+      onChunk,
+      host,
+      signal,
+      temperature: executedToolCalls === 0 ? 0 : 0.2,
+      numPredict: executedToolCalls === 0 ? 512 : 1024,
     });
-  const eventsSummary = organizerEvents.length > 0
-    ? organizerEvents.map(event => {
-        const parsedDate = new Date(`${event.date}T12:00:00`);
-        const weekday = Number.isNaN(parsedDate.getTime())
-          ? ''
-          : `, ${parsedDate.toLocaleDateString('pt-BR', { weekday: 'long' })}`;
-        return `- ${event.date}${weekday}, ${event.time || 'horário não informado'} — ${event.title || 'Sem título'} [${event.category || 'Sem categoria'}]`;
-      }).join('\n')
-    : 'Nenhum evento cadastrado no calendário do Organizador.';
 
-  return `Você é um grande amigo do usuário ${userName}. Vocês se conhecem há muito tempo e você tem acesso fiel a toda a rotina dele através do aplicativo "Organizador Pessoal".
-Data de Hoje: ${todayStr} (${todayKey}).
+    conversation.push(response.message);
+    if (response.toolCalls.length === 0) {
+      return { content: response.content, pendingAction: null };
+    }
 
-Sua missão é atuar como um amigo conselheiro e de confiança, que ajuda o ${userName} não apenas a organizar o dia e aliviar a sobrecarga mental, mas também a resolver qualquer tipo de dúvida da vida pessoal ou profissional.
-Você deve responder em português do Brasil, usando um tom pessoal, próximo e direto (como uma conversa real de WhatsApp entre grandes amigos).
+    for (const call of response.toolCalls) {
+      if (executedToolCalls >= maxToolCalls) {
+        conversation.push({
+          role: 'tool',
+          tool_name: call.function?.name || 'ferramenta_desconhecida',
+          content: JSON.stringify({ ok: false, error: 'Limite de ferramentas atingido.' }),
+        });
+        continue;
+      }
 
---- ROTINA DO ${userName.toUpperCase()} ---
+      const toolName = call.function?.name || '';
+      const toolArguments = call.function?.arguments || {};
+      if (allowWrites && WRITE_TOOL_NAMES.has(toolName)) {
+        if (['editar_evento', 'excluir_evento'].includes(toolName) && !hasUniqueEventLookup) {
+          const lookupError = {
+            ok: false,
+            error: 'Antes de editar ou excluir, use listar_eventos com filtros que retornem exatamente um evento. Se houver mais de um, peça esclarecimento ao usuário.',
+          };
+          executedToolCalls += 1;
+          onToolCall?.({ name: toolName, arguments: toolArguments, result: lookupError });
+          conversation.push({
+            role: 'tool',
+            tool_name: toolName,
+            content: JSON.stringify(lookupError),
+          });
+          continue;
+        }
+        if (['editar_habito', 'marcar_habito_do_dia', 'excluir_habito'].includes(toolName) && !hasUniqueHabitLookup) {
+          const lookupError = {
+            ok: false,
+            error: 'Antes de editar, marcar, desmarcar ou excluir, use listar_habitos com uma busca que retorne exatamente um hábito. Se houver mais de um, peça esclarecimento ao usuário.',
+          };
+          executedToolCalls += 1;
+          onToolCall?.({ name: toolName, arguments: toolArguments, result: lookupError });
+          conversation.push({
+            role: 'tool',
+            tool_name: toolName,
+            content: JSON.stringify(lookupError),
+          });
+          continue;
+        }
+        if (toolName === 'excluir_tarefa' && !hasUniqueTaskLookup) {
+          const lookupError = {
+            ok: false,
+            error: 'Antes de excluir, use listar_tarefas com filtros que retornem exatamente uma tarefa. Se houver mais de uma, peça esclarecimento ao usuário.',
+          };
+          executedToolCalls += 1;
+          onToolCall?.({ name: toolName, arguments: toolArguments, result: lookupError });
+          conversation.push({ role: 'tool', tool_name: toolName, content: JSON.stringify(lookupError) });
+          continue;
+        }
+        if (toolName === 'excluir_nota' && !hasUniqueNoteLookup) {
+          const lookupError = {
+            ok: false,
+            error: 'Antes de excluir, use listar_notas com filtros que retornem exatamente uma nota. Se houver mais de uma, peça esclarecimento ao usuário.',
+          };
+          executedToolCalls += 1;
+          onToolCall?.({ name: toolName, arguments: toolArguments, result: lookupError });
+          conversation.push({ role: 'tool', tool_name: toolName, content: JSON.stringify(lookupError) });
+          continue;
+        }
+        const proposalResult = buildActionProposal(toolName, toolArguments, organizerData);
+        executedToolCalls += 1;
+        onToolCall?.({ name: toolName, arguments: toolArguments, result: proposalResult });
+        if (proposalResult.ok) {
+          return {
+            content: response.content,
+            pendingAction: proposalResult.proposal,
+          };
+        }
+        conversation.push({
+          role: 'tool',
+          tool_name: toolName,
+          content: JSON.stringify(proposalResult),
+        });
+        continue;
+      }
 
-TAREFAS PENDENTES (${pendingTasks.length}):
-${tasksSummary}
+      const result = executeReadOnlyTool(toolName, toolArguments, organizerData);
+      if (toolName === 'listar_eventos') {
+        hasUniqueEventLookup = result.ok && result.total_encontrado === 1;
+      }
+      if (toolName === 'listar_habitos') {
+        hasUniqueHabitLookup = result.ok && result.total_encontrado === 1;
+      }
+      if (toolName === 'listar_tarefas') {
+        hasUniqueTaskLookup = result.ok && result.total_encontrado === 1;
+      }
+      if (toolName === 'listar_notas') {
+        hasUniqueNoteLookup = result.ok && result.total_encontrado === 1;
+      }
+      executedToolCalls += 1;
+      onToolCall?.({ name: toolName, arguments: toolArguments, result });
+      conversation.push({
+        role: 'tool',
+        tool_name: toolName,
+        content: JSON.stringify(result),
+      });
+    }
+  }
 
-HÁBITOS:
-${habitsSummary}
+  throw new Error('O assistente excedeu o limite de chamadas de ferramenta.');
+}
 
-NOTAS RECENTES:
-${notesSummary}
+export async function sendReadOnlyAgentMessageStream(options) {
+  const result = await runOrganizerAgent({ ...options, allowWrites: false });
+  return result.content;
+}
 
-EVENTOS DO CALENDÁRIO DO ORGANIZADOR (${organizerEvents.length}):
-${eventsSummary}
+/**
+ * Allows the model to propose task and note writes. A validated proposal is
+ * returned to the UI but is never executed by this service.
+ */
+export function sendOrganizerAgentMessageStream(options) {
+  return runOrganizerAgent({ ...options, allowWrites: true });
+}
 
---- INSTRUÇÕES DE COMPORTAMENTO ---
-- Considere como fatos sobre a rotina somente os registros listados neste contexto. Nunca invente, presuma ou complete tarefas, hábitos, notas, datas, horários ou eventos ausentes.
-- Ao responder sobre agenda ou calendário, use exclusivamente a seção "EVENTOS DO CALENDÁRIO DO ORGANIZADOR". Você não possui acesso ao Google Calendar nem a calendários externos.
-- Diferencie claramente um evento já marcado de uma sugestão. Nunca apresente uma recomendação como se fosse um compromisso existente.
-- Se não existir evento para o dia ou período solicitado, responda claramente: "Não encontrei eventos marcados nesse período no calendário do Organizador."
-- Aja estritamente como um amigo de longa data conversando. Vá direto ao ponto, com intimidade e empatia.
-- Não use emojis em hipótese alguma. Mantenha a comunicação madura, limpa e direta.
-- Formate suas respostas de forma simples e fácil de ler. Use bullet points apenas se for estritamente necessário para não poluir o texto. Não crie listas desnecessárias.
-- Quando o usuário pedir conselhos pessoais ou profissionais, baseie-se no que você sabe da rotina dele (notas, tarefas, hábitos) para dar respostas personalizadas e maduras.
-- Quando ele precisar de ajuda para priorizar tarefas, sugira diretamente 1 ou 2 coisas da lista que fazem sentido para o momento e pergunte se ele topa começar por elas.
-- O modelo em que você roda é leve, então seja preciso e conciso. Prefira respostas curtas e conectadas à realidade do usuário ao invés de textos longos e teóricos.
-`;
+/**
+ * Builds the trusted read-only system context from versioned persona rules and
+ * either a compact summary for tool mode or a bounded snapshot for fallback mode.
+ */
+export function buildSystemContext(data = {}) {
+  const organizerContext = data.toolsEnabled
+    ? buildOrganizerSummary(data)
+    : buildOrganizerSnapshot(data);
+  return `${buildAssistantPersona(data)}\n\n${organizerContext}`;
 }

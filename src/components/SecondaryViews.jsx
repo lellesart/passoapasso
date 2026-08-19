@@ -136,7 +136,7 @@ export function AISetupView({ onBack }) {
     {
       title: 'Baixe o modelo local',
       body: 'Abra o Terminal ou Prompt de Comando e execute o comando abaixo.',
-      action: <code className="ai-setup-command">ollama run llama3.2</code>
+      action: <code className="ai-setup-command">ollama run qwen3.5:4b</code>
     },
     {
       title: 'Deixe o serviço rodando',

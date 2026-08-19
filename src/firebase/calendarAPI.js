@@ -1,19 +1,43 @@
 export const GOOGLE_CALENDAR_API_URL = 'https://www.googleapis.com/calendar/v3/calendars/primary/events';
+export const ORGANIZER_TIME_ZONE = 'America/Sao_Paulo';
+
+const zonedLocalDateTimeToIso = (date, time, timeZone = ORGANIZER_TIME_ZONE) => {
+  const provisional = new Date(`${date}T${time}:00Z`);
+  const parts = new Intl.DateTimeFormat('en-CA', {
+    timeZone,
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+    hourCycle: 'h23',
+  }).formatToParts(provisional);
+  const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+  const representedAsUtc = Date.UTC(
+    Number(values.year),
+    Number(values.month) - 1,
+    Number(values.day),
+    Number(values.hour),
+    Number(values.minute),
+    Number(values.second),
+  );
+  const offset = representedAsUtc - provisional.getTime();
+  return new Date(provisional.getTime() - offset).toISOString();
+};
 
 /**
  * Converte um evento do nosso formato para o formato esperado pelo Google Calendar
  */
-const formatEventForGoogle = (event) => {
-  // A data no app é no formato YYYY-MM-DD e hora HH:mm
-  // Assumimos fuso horário local para simplificar, montando uma data ISO
-  const startDateTime = new Date(`${event.date}T${event.time}:00`).toISOString();
+export const formatEventForGoogle = (event) => {
+  const startDateTime = zonedLocalDateTimeToIso(event.date, event.time);
   
   // Como não temos hora de término definida no app, definiremos 1 hora de duração padrão
   const endDateTime = new Date(new Date(startDateTime).getTime() + 60 * 60 * 1000).toISOString();
 
   // Configura lembretes. O defaultReminder deve estar em minutos.
   const overrides = [];
-  if (event.reminderMinutes) {
+  if (event.reminderMinutes != null && Number.isFinite(Number(event.reminderMinutes))) {
     overrides.push({ method: 'popup', minutes: Number(event.reminderMinutes) });
   } else {
     // Padrão de 15 minutos se não especificado
@@ -25,11 +49,11 @@ const formatEventForGoogle = (event) => {
     description: `Categoria: ${event.category}\nGerado pelo passo.a.passo`,
     start: {
       dateTime: startDateTime,
-      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
+      timeZone: ORGANIZER_TIME_ZONE
     },
     end: {
       dateTime: endDateTime,
-      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone
+      timeZone: ORGANIZER_TIME_ZONE
     },
     reminders: {
       useDefault: false,
