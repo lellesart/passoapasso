@@ -810,48 +810,68 @@ function SyncStatusBadge({ status, reducedMotion }) {
 }
 
 const MENU_DRAWER_VARIANTS = {
-  open: (revealRadius = 1200) => ({
-    clipPath: `circle(${revealRadius}px at var(--menu-drawer-origin-x) var(--menu-drawer-origin-y))`,
-    opacity: 1,
-    transition: {
-      clipPath: {
-        type: 'tween',
-        duration: 0.46,
-        ease: [0.22, 1, 0.36, 1],
-      },
-      opacity: { duration: 0.08 },
-    },
-  }),
-  closed: {
-    clipPath: 'circle(20px at var(--menu-drawer-origin-x) var(--menu-drawer-origin-y))',
-    opacity: 0,
-    transition: {
-      clipPath: {
-        type: 'tween',
-        duration: 0.38,
-        ease: [0.4, 0, 0.2, 1],
-      },
-      opacity: { delay: 0.3, duration: 0.08 },
-    },
-  },
+  open: ({ revealRadius = 1200, mobile = false } = {}) => (
+    mobile
+      ? {
+          clipPath: 'none',
+          opacity: 1,
+          x: 0,
+          transition: { duration: 0.22, ease: [0.22, 1, 0.36, 1] },
+        }
+      : {
+          clipPath: `circle(${revealRadius}px at var(--menu-drawer-origin-x) var(--menu-drawer-origin-y))`,
+          opacity: 1,
+          transition: {
+            clipPath: {
+              type: 'tween',
+              duration: 0.46,
+              ease: [0.22, 1, 0.36, 1],
+            },
+            opacity: { duration: 0.08 },
+          },
+        }
+  ),
+  closed: ({ mobile = false } = {}) => (
+    mobile
+      ? {
+          clipPath: 'none',
+          opacity: 0,
+          x: 24,
+          transition: { duration: 0.18, ease: [0.4, 0, 0.2, 1] },
+        }
+      : {
+          clipPath: 'circle(20px at var(--menu-drawer-origin-x) var(--menu-drawer-origin-y))',
+          opacity: 0,
+          transition: {
+            clipPath: {
+              type: 'tween',
+              duration: 0.38,
+              ease: [0.4, 0, 0.2, 1],
+            },
+            opacity: { delay: 0.3, duration: 0.08 },
+          },
+        }
+  ),
 };
 
 const MENU_DRAWER_ITEM_VARIANTS = {
-  open: (order = 0) => ({
+  open: ({ order = 0, mobile = false } = {}) => ({
     opacity: 1,
     y: 0,
-    transition: {
-      delay: 0.06 + order * 0.035,
-      type: 'spring',
-      stiffness: 360,
-      damping: 30,
-    },
+    transition: mobile
+      ? { delay: 0.03, duration: 0.14, ease: 'easeOut' }
+      : {
+          delay: 0.06 + order * 0.035,
+          type: 'spring',
+          stiffness: 360,
+          damping: 30,
+        },
   }),
-  closed: {
+  closed: ({ mobile = false } = {}) => ({
     opacity: 0,
-    y: 12,
-    transition: { duration: 0.12, ease: 'easeIn' },
-  },
+    y: mobile ? 0 : 12,
+    transition: { duration: mobile ? 0.08 : 0.12, ease: 'easeIn' },
+  }),
 };
 
 const PAGE_VIEW_VARIANTS = {
@@ -1784,14 +1804,17 @@ export default function App() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
-              transition={{ duration: prefersReducedMotion ? 0.01 : 0.28, ease: 'easeOut' }}
+              transition={{
+                duration: prefersReducedMotion ? 0.01 : isMobileViewport ? 0.16 : 0.28,
+                ease: 'easeOut',
+              }}
               className="menu-drawer-backdrop fixed inset-0 z-40"
               onClick={() => setMobileMenuOpen(false)}
             />
             <motion.div
               id="app-menu-drawer"
               variants={MENU_DRAWER_VARIANTS}
-              custom={menuDrawerRevealRadius}
+              custom={{ revealRadius: menuDrawerRevealRadius, mobile: isMobileViewport }}
               initial={prefersReducedMotion ? { opacity: 0 } : 'closed'}
               animate={prefersReducedMotion ? { opacity: 1 } : 'open'}
               exit={prefersReducedMotion ? { opacity: 0 } : 'closed'}
@@ -1805,7 +1828,7 @@ export default function App() {
                 <motion.header
                   className="menu-drawer-header"
                   variants={MENU_DRAWER_ITEM_VARIANTS}
-                  custom={0}
+                  custom={{ order: 0, mobile: isMobileViewport }}
                   initial="closed"
                   animate="open"
                   exit="closed"
@@ -1824,7 +1847,7 @@ export default function App() {
                         <motion.li
                           key={item.id}
                           variants={MENU_DRAWER_ITEM_VARIANTS}
-                          custom={index + 1}
+                          custom={{ order: index + 1, mobile: isMobileViewport }}
                           initial="closed"
                           animate="open"
                           exit="closed"
@@ -1856,7 +1879,7 @@ export default function App() {
               <motion.footer
                 className="menu-drawer-footer"
                 variants={MENU_DRAWER_ITEM_VARIANTS}
-                custom={navItems.length + 1}
+                custom={{ order: navItems.length + 1, mobile: isMobileViewport }}
                 initial="closed"
                 animate="open"
                 exit="closed"

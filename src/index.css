@@ -4403,6 +4403,7 @@ button.shopping-list-item:hover { color: var(--teal-dark); }
   .menu-drawer {
     --menu-drawer-origin-x: calc(100% - 37px);
     --menu-drawer-origin-y: 33px;
+    will-change: transform, opacity;
   }
   .sync-status-badge {
     top: 14px;
