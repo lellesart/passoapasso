@@ -310,6 +310,14 @@ h1, h2, h3, h4, h5, h6 {
   box-shadow: 0 5px 16px rgba(35, 52, 49, .06);
 }
 
+.app-menu-trigger.is-open {
+  z-index: 60;
+  color: var(--teal-dark);
+  background: rgba(251, 252, 250, .96);
+  border-color: rgba(183, 197, 191, .72);
+  box-shadow: none;
+}
+
 .sync-status-badge {
   position: fixed;
   top: 18px;
@@ -722,6 +730,8 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .menu-drawer {
+  --menu-drawer-origin-x: calc(100% - 43px);
+  --menu-drawer-origin-y: 37px;
   width: min(380px, 100vw);
   display: flex;
   flex-direction: column;
@@ -735,11 +745,11 @@ h1, h2, h3, h4, h5, h6 {
   border-left: 1px solid var(--line);
   border-radius: 0 !important;
   box-shadow: -22px 0 60px rgba(35, 52, 49, .12);
+  will-change: clip-path, opacity;
 }
 
 .menu-drawer-backdrop {
   background: rgba(25, 31, 29, .24);
-  backdrop-filter: blur(2px);
 }
 
 .menu-drawer-main { padding: 30px 28px 18px; }
@@ -749,7 +759,7 @@ h1, h2, h3, h4, h5, h6 {
   align-items: flex-start;
   justify-content: space-between;
   gap: 20px;
-  padding-bottom: 25px;
+  padding: 0 44px 25px 0;
   border-bottom: 1px solid var(--line);
 }
 
@@ -774,26 +784,6 @@ h1, h2, h3, h4, h5, h6 {
   font-weight: 700;
   letter-spacing: -.045em;
   line-height: 1;
-}
-
-.menu-drawer-close {
-  width: 34px;
-  height: 34px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 0 0 auto;
-  color: #89928e;
-  background: transparent;
-  border: 1px solid transparent;
-  border-radius: 2px;
-  transition: color .18s, background .18s, border-color .18s;
-}
-
-.menu-drawer-close:hover {
-  color: var(--ink);
-  background: #f1f4f2;
-  border-color: var(--line);
 }
 
 .menu-drawer-nav { padding: 22px 0 8px; }
@@ -4410,6 +4400,10 @@ button.shopping-list-item:hover { color: var(--teal-dark); }
   .app-statusbar { height: auto; min-height: 56px; padding: 10px 18px; }
   .app-status-meta { display: none; }
   .app-menu-trigger { top: 14px; right: 18px; }
+  .menu-drawer {
+    --menu-drawer-origin-x: calc(100% - 37px);
+    --menu-drawer-origin-y: 33px;
+  }
   .sync-status-badge {
     top: 14px;
     right: 64px;

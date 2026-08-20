@@ -11,7 +11,6 @@ import {
   CheckCircle2,
   Circle,
   RotateCcw,
-  Menu,
   X,
   ChevronRight,
   ChevronLeft,
@@ -810,6 +809,122 @@ function SyncStatusBadge({ status, reducedMotion }) {
   );
 }
 
+const MENU_DRAWER_VARIANTS = {
+  open: {
+    clipPath: 'circle(2600px at var(--menu-drawer-origin-x) var(--menu-drawer-origin-y))',
+    opacity: 1,
+    transition: {
+      clipPath: {
+        type: 'spring',
+        stiffness: 34,
+        damping: 20,
+        restDelta: 1.5,
+      },
+      opacity: { duration: 0.12 },
+    },
+  },
+  closed: {
+    clipPath: 'circle(20px at var(--menu-drawer-origin-x) var(--menu-drawer-origin-y))',
+    opacity: 0,
+    transition: {
+      clipPath: {
+        delay: 0.08,
+        type: 'spring',
+        stiffness: 380,
+        damping: 42,
+      },
+      opacity: { delay: 0.18, duration: 0.08 },
+    },
+  },
+};
+
+const MENU_DRAWER_ITEM_VARIANTS = {
+  open: (order = 0) => ({
+    opacity: 1,
+    y: 0,
+    transition: {
+      delay: 0.06 + order * 0.035,
+      type: 'spring',
+      stiffness: 360,
+      damping: 30,
+    },
+  }),
+  closed: {
+    opacity: 0,
+    y: 12,
+    transition: { duration: 0.12, ease: 'easeIn' },
+  },
+};
+
+const PAGE_VIEW_VARIANTS = {
+  initial: ({ instant, mobile, reducedMotion }) => {
+    if (instant || reducedMotion) return { opacity: 1 };
+    return mobile ? { opacity: 0 } : { opacity: 0, y: 4 };
+  },
+  visible: ({ instant, mobile, reducedMotion }) => ({
+    opacity: 1,
+    ...(mobile || instant || reducedMotion ? {} : { y: 0 }),
+    transition: instant || reducedMotion
+      ? { duration: 0.01 }
+      : {
+          duration: mobile ? 0.3 : 0.34,
+          ease: [0.22, 1, 0.36, 1],
+          opacity: { duration: mobile ? 0.24 : 0.26, ease: 'easeOut' },
+        },
+  }),
+  exit: ({ instant, mobile, reducedMotion }) => {
+    if (instant || reducedMotion) return { opacity: 1, transition: { duration: 0.01 } };
+    return {
+      opacity: 0,
+      ...(mobile ? {} : { y: -2 }),
+      transition: {
+        duration: mobile ? 0.3 : 0.34,
+        ease: [0.22, 1, 0.36, 1],
+        opacity: { duration: mobile ? 0.24 : 0.26, ease: 'easeOut' },
+      },
+    };
+  },
+};
+
+function AnimatedMenuIcon({ isOpen, reducedMotion }) {
+  const pathTransition = { duration: reducedMotion ? 0.01 : 0.24, ease: [0.22, 1, 0.36, 1] };
+
+  return (
+    <motion.svg
+      width="20"
+      height="20"
+      viewBox="0 0 20 20"
+      fill="none"
+      initial={false}
+      animate={isOpen ? 'open' : 'closed'}
+      aria-hidden="true"
+    >
+      <motion.path
+        variants={{ closed: { d: 'M 3 5 L 17 5' }, open: { d: 'M 4 16 L 16 4' } }}
+        transition={pathTransition}
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+      />
+      <motion.path
+        d="M 3 10 L 17 10"
+        variants={{ closed: { opacity: 1 }, open: { opacity: 0 } }}
+        transition={{ duration: reducedMotion ? 0.01 : 0.12 }}
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+      />
+      <motion.path
+        variants={{ closed: { d: 'M 3 15 L 17 15' }, open: { d: 'M 4 4 L 16 16' } }}
+        transition={pathTransition}
+        stroke="currentColor"
+        strokeWidth="1.7"
+        strokeLinecap="round"
+      />
+    </motion.svg>
+  );
+}
+
 function useMediaQuery(query) {
   const [matches, setMatches] = useState(() => (
     typeof window !== 'undefined' && typeof window.matchMedia === 'function'
@@ -855,6 +970,24 @@ export default function App() {
     return 'dashboard';
   });
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [pageTransitionSource, setPageTransitionSource] = useState('standard');
+
+  useEffect(() => {
+    if (!mobileMenuOpen) return undefined;
+
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setMobileMenuOpen(false);
+    };
+
+    document.body.style.overflow = 'hidden';
+    window.addEventListener('keydown', closeOnEscape);
+
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      window.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [mobileMenuOpen]);
 
   const handleTabChange = (tabId, replace = false) => {
     setActiveTab(tabId);
@@ -866,6 +999,17 @@ export default function App() {
         window.history.pushState(stateObj, '', `#${tabId}`);
       }
     }
+  };
+
+  const handleDrawerTabChange = (tabId) => {
+    if (tabId === activeTab) {
+      setMobileMenuOpen(false);
+      return;
+    }
+
+    setPageTransitionSource('drawer');
+    handleTabChange(tabId);
+    setMobileMenuOpen(false);
   };
 
   useEffect(() => {
@@ -1610,11 +1754,13 @@ export default function App() {
       />
 
       <button
-        onClick={() => setMobileMenuOpen(true)}
-        className="app-menu-button app-menu-trigger"
-        aria-label="Abrir Menu"
+        onClick={() => setMobileMenuOpen((isOpen) => !isOpen)}
+        className={`app-menu-button app-menu-trigger ${mobileMenuOpen ? 'is-open' : ''}`}
+        aria-label={mobileMenuOpen ? 'Fechar menu' : 'Abrir menu'}
+        aria-expanded={mobileMenuOpen}
+        aria-controls="app-menu-drawer"
       >
-        <Menu className="w-5 h-5" />
+        <AnimatedMenuIcon isOpen={mobileMenuOpen} reducedMotion={prefersReducedMotion} />
       </button>
 
       <AnimatePresence>
@@ -1637,44 +1783,53 @@ export default function App() {
               initial={{ opacity: 0 }}
               animate={{ opacity: 1 }}
               exit={{ opacity: 0 }}
+              transition={{ duration: prefersReducedMotion ? 0.01 : 0.28, ease: 'easeOut' }}
               className="menu-drawer-backdrop fixed inset-0 z-40"
               onClick={() => setMobileMenuOpen(false)}
             />
-            <motion.div 
-              initial={{ x: "100%" }}
-              animate={{ x: 0 }}
-              exit={{ x: "100%" }}
-              transition={{ type: "spring", damping: 25, stiffness: 300 }}
+            <motion.div
+              id="app-menu-drawer"
+              variants={MENU_DRAWER_VARIANTS}
+              initial={prefersReducedMotion ? { opacity: 0 } : 'closed'}
+              animate={prefersReducedMotion ? { opacity: 1 } : 'open'}
+              exit={prefersReducedMotion ? { opacity: 0 } : 'closed'}
+              transition={prefersReducedMotion ? { duration: 0.01 } : undefined}
               className="menu-drawer fixed top-0 right-0 z-50 h-screen"
               role="dialog"
               aria-modal="true"
               aria-labelledby="menu-drawer-title"
             >
               <div className="menu-drawer-main">
-                <header className="menu-drawer-header">
+                <motion.header
+                  className="menu-drawer-header"
+                  variants={MENU_DRAWER_ITEM_VARIANTS}
+                  custom={0}
+                  initial="closed"
+                  animate="open"
+                  exit="closed"
+                >
                   <div>
                     <span className="menu-drawer-kicker">Organizador pessoal</span>
                     <h2 id="menu-drawer-title">Menu</h2>
                   </div>
-                  <button 
-                    onClick={() => setMobileMenuOpen(false)} 
-                    className="menu-drawer-close"
-                    aria-label="Fechar menu"
-                  >
-                     <X className="w-5 h-5" />
-                  </button>
-                </header>
+                </motion.header>
                 
                 <nav className="menu-drawer-nav" aria-label="Navegação principal">
-                  <ol>
+                  <motion.ol>
                     {navItems.map((item, index) => {
                       const isActive = activeTab === item.id;
                       return (
-                        <li key={item.id}>
+                        <motion.li
+                          key={item.id}
+                          variants={MENU_DRAWER_ITEM_VARIANTS}
+                          custom={index + 1}
+                          initial="closed"
+                          animate="open"
+                          exit="closed"
+                        >
                           <button
                             onClick={() => {
-                              handleTabChange(item.id);
-                              setMobileMenuOpen(false);
+                              handleDrawerTabChange(item.id);
                             }}
                             className={`menu-drawer-link ${isActive ? 'is-active' : ''}`}
                             aria-current={isActive ? 'page' : undefined}
@@ -1688,19 +1843,25 @@ export default function App() {
                             )}
                             <ChevronRight className="menu-drawer-arrow w-4 h-4" />
                           </button>
-                        </li>
+                        </motion.li>
                       );
                     })}
-                  </ol>
+                  </motion.ol>
                 </nav>
               </div>
 
               {/* Status de Sincronização do Google Calendar */}
-              <footer className="menu-drawer-footer">
+              <motion.footer
+                className="menu-drawer-footer"
+                variants={MENU_DRAWER_ITEM_VARIANTS}
+                custom={navItems.length + 1}
+                initial="closed"
+                animate="open"
+                exit="closed"
+              >
                 <button 
                   onClick={() => {
-                    handleTabChange('google_calendar');
-                    setMobileMenuOpen(false);
+                    handleDrawerTabChange('google_calendar');
                   }}
                   className={`menu-calendar-status ${googleAccessToken ? 'is-connected' : ''}`}
                 >
@@ -1740,7 +1901,7 @@ export default function App() {
                   <FileText className="w-4 h-4" />
                   <span>Copiar diagnóstico</span>
                 </button>
-              </footer>
+              </motion.footer>
             </motion.div>
           </>
         )}
@@ -1749,27 +1910,27 @@ export default function App() {
       {/* Conteúdo Principal */}
       <div className="app-content min-w-0">
         <main ref={appMainRef} className="app-main">
-          <AnimatePresence initial={false} mode="wait">
+          <AnimatePresence
+            initial={false}
+            mode="wait"
+            custom={{
+              instant: pageTransitionSource === 'drawer',
+              mobile: isMobileViewport,
+              reducedMotion: prefersReducedMotion,
+            }}
+            onExitComplete={() => setPageTransitionSource('standard')}
+          >
             <motion.div
               key={activeTab}
-              initial={prefersReducedMotion
-                ? false
-                : isMobileViewport
-                  ? { opacity: 0 }
-                  : { opacity: 0, y: 4 }}
-              animate={isMobileViewport ? { opacity: 1 } : { opacity: 1, y: 0 }}
-              exit={prefersReducedMotion
-                ? { opacity: 1 }
-                : isMobileViewport
-                  ? { opacity: 0 }
-                  : { opacity: 0, y: -2 }}
-              transition={prefersReducedMotion
-                ? { duration: 0.01 }
-                : {
-                    duration: isMobileViewport ? 0.3 : 0.34,
-                    ease: [0.22, 1, 0.36, 1],
-                    opacity: { duration: isMobileViewport ? 0.24 : 0.26, ease: 'easeOut' }
-                  }}
+              variants={PAGE_VIEW_VARIANTS}
+              custom={{
+                instant: pageTransitionSource === 'drawer',
+                mobile: isMobileViewport,
+                reducedMotion: prefersReducedMotion,
+              }}
+              initial="initial"
+              animate="visible"
+              exit="exit"
               className="editorial-view page-transition max-w-5xl mx-auto space-y-8"
             >
               <Suspense fallback={<ViewLoading />}>
