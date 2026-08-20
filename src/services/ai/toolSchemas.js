@@ -152,7 +152,7 @@ const HABIT_FREQUENCY = {
 
 const HABIT_COLOR = {
   type: 'string',
-  enum: ['Verde', 'Azul', 'Amarelo', 'Rosa', 'Roxo', 'Neutro'],
+  enum: ['Azul', 'Oliva', 'Vinho', 'Roxo', 'Verde', 'Grafite'],
 };
 
 const HABIT_DAYS = {

@@ -85,7 +85,7 @@ test('habit lookup can filter by daily completion state', () => {
   assert.equal(result.itens[0].data_estado, '2026-08-14');
   assert.equal(result.itens[0].frequencia, 'todos_dias');
   assert.deepEqual(result.itens[0].dias, []);
-  assert.equal(result.itens[0].cor, 'Neutro');
+  assert.equal(result.itens[0].cor, 'Grafite');
 });
 
 test('habit lookup normalizes specific days and selected color', () => {

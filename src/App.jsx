@@ -42,7 +42,7 @@ import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { Toaster, toast } from 'sonner';
 import { applyConfirmedOrganizerAction, applyOrganizerUndo } from './services/ai/actionExecutor';
 import { syncCalendarActionWithGoogle } from './services/ai/calendarActionSync';
-import { organizerDateKey, toggleDailyHabitCompletion } from './services/ai/habitModel';
+import { frequencyFromHabit, organizerDateKey, toggleDailyHabitCompletion } from './services/ai/habitModel';
 import { appendAuditEntry, createAuditEntry } from './services/ai/actionAudit';
 
 const loadSecondaryViews = () => import('./components/SecondaryViews');
@@ -109,6 +109,14 @@ const getCategoryStyle = (cat) => CATEGORY_COLORS[cat] || DEFAULT_COLOR;
 
 const NOTE_CATEGORIES = ['Trabalho', 'Pessoal', 'Saúde', 'Estudos', 'Compras'];
 const TASK_CATEGORIES = ['Trabalho', 'Pessoal', 'Saúde', 'Estudos'];
+const HABIT_COLOR_OPTIONS = [
+  { label: 'Azul arquivo', value: 'habit-color-blue', swatch: 'habit-swatch-blue' },
+  { label: 'Verde oliva', value: 'habit-color-olive', swatch: 'habit-swatch-olive' },
+  { label: 'Vinho', value: 'habit-color-wine', swatch: 'habit-swatch-wine' },
+  { label: 'Roxo editorial', value: 'habit-color-purple', swatch: 'habit-swatch-purple' },
+  { label: 'Verde profundo', value: 'habit-color-green', swatch: 'habit-swatch-green' },
+  { label: 'Grafite', value: 'habit-color-graphite', swatch: 'habit-swatch-graphite' },
+];
 
 const getShoppingItems = (note) => {
   if (Array.isArray(note?.items)) return note.items;
@@ -373,13 +381,138 @@ function NoteEditForm({ note, onCancel, onSave }) {
   );
 }
 
+function HabitEditForm({ habit, onCancel, onSave }) {
+  const daysOfWeek = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
+  const currentSchedule = frequencyFromHabit(habit);
+  const [name, setName] = useState(habit.name || '');
+  const [color, setColor] = useState(habit.color || 'habit-color-green');
+  const [recurrenceType, setRecurrenceType] = useState(currentSchedule.frequency);
+  const [selectedDays, setSelectedDays] = useState(currentSchedule.days);
+
+  useEffect(() => {
+    const nextSchedule = frequencyFromHabit(habit);
+    setName(habit.name || '');
+    setColor(habit.color || 'habit-color-green');
+    setRecurrenceType(nextSchedule.frequency);
+    setSelectedDays(nextSchedule.days);
+  }, [habit]);
+
+  const toggleDay = (day) => {
+    setSelectedDays(prev => (
+      prev.includes(day)
+        ? prev.filter(item => item !== day)
+        : [...prev, day]
+    ));
+  };
+
+  const handleSubmit = (event) => {
+    event.preventDefault();
+    const nextName = name.trim();
+    if (!nextName) return;
+
+    let recurrence = 'Todos os dias';
+    let nextDays = [];
+
+    if (recurrenceType === 'uma_vez') {
+      recurrence = 'Apenas uma vez';
+    } else if (recurrenceType === 'dias_especificos') {
+      const uniqueDays = [...new Set(selectedDays)];
+      if (uniqueDays.length === 0) {
+        toast.error('Selecione pelo menos um dia!');
+        return;
+      }
+      nextDays = daysOfWeek.filter(day => uniqueDays.includes(day));
+      recurrence = nextDays.join(', ');
+    }
+
+    onSave({
+      ...habit,
+      name: nextName,
+      color,
+      recurrence,
+      frequency: recurrenceType,
+      days: nextDays,
+    });
+  };
+
+  return (
+    <div className="note-viewer-overlay fixed inset-0 z-50 flex items-center justify-center p-5 sm:p-8">
+      <div className="note-viewer-backdrop fixed inset-0" onClick={onCancel}></div>
+      <article className="record-editor relative z-10" role="dialog" aria-modal="true" aria-labelledby="habit-editor-title">
+        <header className="record-editor-header">
+          <div>
+            <span className="note-drawer-kicker">Hábito ativo · edição</span>
+            <h2 id="habit-editor-title">Editar hábito</h2>
+          </div>
+          <button type="button" onClick={onCancel} className="note-drawer-close" aria-label="Fechar edição do hábito">
+            <X className="w-5 h-5" />
+          </button>
+        </header>
+        <form onSubmit={handleSubmit} className="record-editor-form">
+          <label className="record-editor-field">
+            <span className="note-label">Nome</span>
+            <input value={name} onChange={(event) => setName(event.target.value)} autoFocus />
+          </label>
+          <fieldset className="record-editor-field">
+            <legend className="note-label">Tom do registro</legend>
+            <div className="habit-color-options habit-edit-color-options" role="group" aria-label="Cor do hábito">
+              {HABIT_COLOR_OPTIONS.map(option => (
+                <button
+                  key={option.value}
+                  type="button"
+                  onClick={() => setColor(option.value)}
+                  aria-label={`Selecionar cor ${option.label}`}
+                  title={option.label}
+                  className={`habit-color-swatch ${option.swatch} ${color === option.value ? 'is-selected' : ''}`}
+                />
+              ))}
+            </div>
+          </fieldset>
+          <fieldset className="record-editor-field">
+            <legend className="note-label">Frequência</legend>
+            <div className="habit-recurrence-options habit-edit-recurrence-options">
+              <button type="button" onClick={() => setRecurrenceType('todos_dias')} className={`habit-recurrence-option ${recurrenceType === 'todos_dias' ? 'is-selected' : ''}`}>Todos os dias</button>
+              <button type="button" onClick={() => setRecurrenceType('dias_especificos')} className={`habit-recurrence-option ${recurrenceType === 'dias_especificos' ? 'is-selected' : ''}`}>Dias específicos</button>
+              <button type="button" onClick={() => setRecurrenceType('uma_vez')} className={`habit-recurrence-option ${recurrenceType === 'uma_vez' ? 'is-selected' : ''}`}>Apenas uma vez</button>
+            </div>
+
+            {recurrenceType === 'dias_especificos' && (
+              <div className="habit-day-options habit-edit-day-options">
+                {daysOfWeek.map(day => (
+                  <button
+                    type="button"
+                    key={day}
+                    onClick={() => toggleDay(day)}
+                    className={`habit-day-option ${selectedDays.includes(day) ? 'is-selected' : ''}`}
+                  >
+                    {day}
+                  </button>
+                ))}
+              </div>
+            )}
+          </fieldset>
+          <div className="record-editor-actions">
+            <button type="button" onClick={onCancel} className="note-cancel-button">Cancelar</button>
+            <button type="submit" className="note-save-button">
+              <Save className="w-4 h-4" />
+              <span>Salvar alterações</span>
+            </button>
+          </div>
+        </form>
+      </article>
+    </div>
+  );
+}
+
 const getHabitTone = (color = '') => {
   if (color.includes('4A85F6') || color.includes('blue')) return 'blue';
-  if (color.includes('FF9B6A') || color.includes('amber')) return 'orange';
+  if (color.includes('FF9B6A')) return 'olive';
+  if (color.includes('olive')) return 'olive';
+  if (color.includes('wine') || color.includes('terracotta') || color.includes('rose')) return 'wine';
+  if (color.includes('amber') || color.includes('yellow')) return 'olive';
   if (color.includes('9864F5') || color.includes('purple')) return 'purple';
   if (color.includes('10B981') || color.includes('emerald')) return 'green';
-  if (color.includes('rose')) return 'rose';
-  return 'neutral';
+  return 'graphite';
 };
 
 // DADOS INICIAIS DE EXEMPLO
@@ -393,10 +526,10 @@ const INITIAL_TASKS = [
 ];
 
 const INITIAL_HABITS = [
-  { id: 'h_treino', name: 'Treino', color: 'bg-[#4A85F6]', iconColor: 'text-[#4A85F6]', recurrence: 'Todos os dias', iconName: 'Dumbbell' },
-  { id: 'h_dieta', name: 'Dieta', color: 'bg-[#FF9B6A]', iconColor: 'text-[#FF9B6A]', recurrence: 'Seg, Qui', iconName: 'Apple' },
-  { id: 'h_cardio', name: 'Cardio', color: 'bg-[#9864F5]', iconColor: 'text-[#9864F5]', recurrence: 'Todos os dias', iconName: 'Activity' },
-  { id: 'h_estudo', name: 'Estudo', color: 'bg-[#10B981]', iconColor: 'text-[#10B981]', recurrence: 'Todos os dias', iconName: 'GraduationCap' }
+  { id: 'h_treino', name: 'Treino', color: 'habit-color-blue', iconColor: 'text-[#376FCF]', recurrence: 'Todos os dias', iconName: 'Dumbbell' },
+  { id: 'h_dieta', name: 'Dieta', color: 'habit-color-olive', iconColor: 'text-[#5E6F3B]', recurrence: 'Seg, Qui', iconName: 'Apple' },
+  { id: 'h_cardio', name: 'Cardio', color: 'habit-color-purple', iconColor: 'text-[#7543C6]', recurrence: 'Todos os dias', iconName: 'Activity' },
+  { id: 'h_estudo', name: 'Estudo', color: 'habit-color-green', iconColor: 'text-[#087F5B]', recurrence: 'Todos os dias', iconName: 'GraduationCap' }
 ];
 
 const INITIAL_NOTES = [
@@ -605,7 +738,21 @@ export default function App() {
           if (docSnap.exists()) {
             const data = docSnap.data();
             if (data.tasks) setTasks(data.tasks);
-            if (data.habits) setHabits(data.habits);
+            if (data.habits) {
+              const normalizedHabits = data.habits.map(habit => (
+                habit.id === 'h_dieta' && (
+                  String(habit.color || '').includes('FF9B6A')
+                  || String(habit.color || '').includes('amber')
+                )
+                  ? {
+                      ...habit,
+                      color: 'habit-color-olive',
+                      iconColor: 'text-[#5E6F3B]',
+                    }
+                  : habit
+              ));
+              setHabits(normalizedHabits);
+            }
             if (data.notes) setNotes(data.notes);
             if (data.events) setEvents(data.events);
             if (data.aiActionAudit) {
@@ -738,27 +885,16 @@ export default function App() {
     if (applied.collection === 'habits') setHabits(applied.records);
     if (applied.collection === 'dailyHabitsState') setDailyHabitsState(applied.records);
 
-    const syncResult = await syncToFirestore(applied.collection, applied.records);
-    if (!syncResult.ok) {
-      const message = `${applied.message} A alteração ficou local, mas não foi sincronizada com o Firebase.`;
-      toast.error(message);
-      return withUndo({
-        ok: true,
-        collection: applied.collection,
-        message,
-        syncStatus: 'local-only',
-      });
-    }
-
     if (applied.collection === 'events') {
       const googleResult = await syncCalendarActionWithGoogle(applied, {
         accessToken: googleAccessToken,
       });
       setEvents(googleResult.records);
 
+      const firestoreResult = await syncToFirestore('events', googleResult.records);
+
       if (googleResult.needsFirestoreResync) {
-        const linkSyncResult = await syncToFirestore('events', googleResult.records);
-        if (!linkSyncResult.ok) {
+        if (!firestoreResult.ok) {
           const message = 'Evento criado no Organizador e no Google Calendar, mas o vínculo entre os dois não foi salvo no Firebase.';
           toast.error(message);
           return withUndo({ ok: true, collection: 'events', message, syncStatus: 'partial' }, {
@@ -766,6 +902,15 @@ export default function App() {
             googleOperationSucceeded: googleResult.googleStatus === 'synced',
           });
         }
+      } else if (!firestoreResult.ok && googleResult.googleStatus !== 'synced') {
+        const message = `${googleResult.message} A alteração ficou local, mas não foi sincronizada com o Firebase.`;
+        toast.error(message);
+        return withUndo({
+          ok: true,
+          collection: 'events',
+          message,
+          syncStatus: 'local-only',
+        }, { ...applied.undo, googleOperationSucceeded: false });
       }
 
       if (googleResult.googleStatus === 'local-only') {
@@ -778,6 +923,20 @@ export default function App() {
         }, { ...applied.undo, googleOperationSucceeded: false });
       }
 
+      if (!firestoreResult.ok) {
+        const message = 'Evento criado no Organizador e no Google Calendar, mas não foi possível salvar a atualização no Firebase.';
+        toast.error(message);
+        return withUndo({
+          ok: true,
+          collection: 'events',
+          message,
+          syncStatus: 'partial',
+        }, {
+          ...applied.undo,
+          googleOperationSucceeded: true,
+        });
+      }
+
       toast.success(googleResult.message);
       return withUndo({
         ok: true,
@@ -787,6 +946,18 @@ export default function App() {
       }, {
         ...applied.undo,
         googleOperationSucceeded: googleResult.googleStatus === 'synced',
+      });
+    }
+
+    const syncResult = await syncToFirestore(applied.collection, applied.records);
+    if (!syncResult.ok) {
+      const message = `${applied.message} A alteração ficou local, mas não foi sincronizada com o Firebase.`;
+      toast.error(message);
+      return withUndo({
+        ok: true,
+        collection: applied.collection,
+        message,
+        syncStatus: 'local-only',
       });
     }
 
@@ -2286,20 +2457,12 @@ function TasksView({ tasks, setTasks, syncToFirestore }) {
 // ==========================================
 function HabitsView({ habits, setHabits, syncToFirestore }) {
   const [newHabitName, setNewHabitName] = React.useState('');
-  const [newHabitColor, setNewHabitColor] = React.useState('bg-emerald-100 text-emerald-900');
+  const [newHabitColor, setNewHabitColor] = React.useState('habit-color-green');
   const [recurrenceType, setRecurrenceType] = React.useState('todos_dias');
   const [selectedDays, setSelectedDays] = React.useState([]);
+  const [editingHabit, setEditingHabit] = React.useState(null);
 
   const daysOfWeek = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
-
-  const habitColors = [
-    { value: 'bg-emerald-100 text-emerald-900', hex: 'bg-emerald-400' },
-    { value: 'bg-blue-100 text-blue-900', hex: 'bg-blue-400' },
-    { value: 'bg-amber-100 text-amber-900', hex: 'bg-amber-400' },
-    { value: 'bg-rose-100 text-rose-900', hex: 'bg-rose-400' },
-    { value: 'bg-purple-100 text-purple-900', hex: 'bg-purple-400' },
-    { value: 'bg-stone-200 text-stone-900', hex: 'bg-stone-400' }
-  ];
 
   const toggleDay = (day) => {
     setSelectedDays(prev => 
@@ -2335,6 +2498,16 @@ function HabitsView({ habits, setHabits, syncToFirestore }) {
     toast.success('Hábito criado com sucesso!');
   };
 
+  const handleUpdateHabit = (updatedHabit) => {
+    const updatedHabits = habits.map(habit => (
+      habit.id === updatedHabit.id ? updatedHabit : habit
+    ));
+    setHabits(updatedHabits);
+    if (syncToFirestore) syncToFirestore('habits', updatedHabits);
+    setEditingHabit(null);
+    toast.success('Hábito atualizado com sucesso!');
+  };
+
   return (
     <div className="habits-view space-y-6">
       <form onSubmit={handleAddHabit} className="habits-intake">
@@ -2348,13 +2521,14 @@ function HabitsView({ habits, setHabits, syncToFirestore }) {
           <div className="habit-color-field">
             <span className="habit-field-label">Tom do registro</span>
             <div className="habit-color-options">
-              {habitColors.map(c => (
+              {HABIT_COLOR_OPTIONS.map(c => (
                 <button
                   type="button"
                   key={c.value}
                   onClick={() => setNewHabitColor(c.value)}
-                  aria-label={`Selecionar cor ${c.value}`}
-                  className={`habit-color-swatch ${c.hex} ${newHabitColor === c.value ? 'is-selected' : ''}`}
+                  aria-label={`Selecionar cor ${c.label}`}
+                  title={c.label}
+                  className={`habit-color-swatch ${c.swatch} ${newHabitColor === c.value ? 'is-selected' : ''}`}
                 />
               ))}
             </div>
@@ -2407,17 +2581,28 @@ function HabitsView({ habits, setHabits, syncToFirestore }) {
                     <div className={`habit-note-icon ${h.iconColor || 'text-stone-800'}`}>
                       <Icon className="w-4 h-4" />
                     </div>
-                    <button 
-                      className="habit-delete"
-                      onClick={() => {
-                        const updatedHabits = habits.map(habit => habit.id === h.id ? { ...habit, deleted: true } : habit);
-                        setHabits(updatedHabits);
-                        if(syncToFirestore) syncToFirestore('habits', updatedHabits);
-                        toast.success('Hábito movido para a Lixeira');
-                      }}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </button>
+                    <div className="habit-note-actions">
+                      <button
+                        type="button"
+                        className="habit-edit"
+                        onClick={() => setEditingHabit(h)}
+                        aria-label={`Editar hábito ${h.name}`}
+                      >
+                        <Pencil className="w-4 h-4" />
+                      </button>
+                      <button
+                        type="button"
+                        className="habit-delete"
+                        onClick={() => {
+                          const updatedHabits = habits.map(habit => habit.id === h.id ? { ...habit, deleted: true } : habit);
+                          setHabits(updatedHabits);
+                          if(syncToFirestore) syncToFirestore('habits', updatedHabits);
+                          toast.success('Hábito movido para a Lixeira');
+                        }}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </button>
+                    </div>
                   </div>
                   <h4 className="habit-note-title">{h.name}</h4>
                 </div>
@@ -2430,6 +2615,15 @@ function HabitsView({ habits, setHabits, syncToFirestore }) {
           })}
         </div>
       </div>
+
+      {editingHabit && (
+        <HabitEditForm
+          key={editingHabit.id}
+          habit={editingHabit}
+          onCancel={() => setEditingHabit(null)}
+          onSave={handleUpdateHabit}
+        />
+      )}
     </div>
   );
 }

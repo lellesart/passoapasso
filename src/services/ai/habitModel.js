@@ -3,12 +3,12 @@ export const HABIT_DAYS = ['Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb', 'Dom'];
 export const HABIT_FREQUENCIES = new Set(['todos_dias', 'dias_especificos', 'uma_vez']);
 
 export const HABIT_COLOR_VALUES = {
-  Verde: 'bg-emerald-100 text-emerald-900',
-  Azul: 'bg-blue-100 text-blue-900',
-  Amarelo: 'bg-amber-100 text-amber-900',
-  Rosa: 'bg-rose-100 text-rose-900',
-  Roxo: 'bg-purple-100 text-purple-900',
-  Neutro: 'bg-stone-200 text-stone-900',
+  Azul: 'habit-color-blue',
+  Oliva: 'habit-color-olive',
+  Vinho: 'habit-color-wine',
+  Roxo: 'habit-color-purple',
+  Verde: 'habit-color-green',
+  Grafite: 'habit-color-graphite',
 };
 
 export const HABIT_COLORS = new Set(Object.keys(HABIT_COLOR_VALUES));
@@ -48,11 +48,12 @@ export const habitColorLabel = (color = '') => {
   const entry = Object.entries(HABIT_COLOR_VALUES).find(([, value]) => value === color);
   if (entry) return entry[0];
   if (color.includes('4A85F6') || color.includes('blue')) return 'Azul';
-  if (color.includes('FF9B6A') || color.includes('amber')) return 'Amarelo';
+  if (color.includes('olive')) return 'Oliva';
+  if (color.includes('terracotta') || color.includes('wine') || color.includes('rose')) return 'Vinho';
+  if (color.includes('FF9B6A') || color.includes('amber')) return 'Oliva';
   if (color.includes('9864F5') || color.includes('purple')) return 'Roxo';
   if (color.includes('10B981') || color.includes('emerald')) return 'Verde';
-  if (color.includes('rose')) return 'Rosa';
-  return 'Neutro';
+  return 'Grafite';
 };
 
 export const organizerDateKey = (now = new Date(), timeZone = 'America/Sao_Paulo') => {

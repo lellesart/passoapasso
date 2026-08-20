@@ -1,0 +1,28 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-labelledby="title desc">
+  <title id="title">Passo a Passo</title>
+  <desc id="desc">Ícone editorial com folha e sequência de passos.</desc>
+  <defs>
+    <filter id="paper-shadow" x="-12%" y="-12%" width="124%" height="124%">
+      <feDropShadow dx="0" dy="16" stdDeviation="22" flood-color="#062f31" flood-opacity=".24"/>
+    </filter>
+  </defs>
+
+  <rect width="512" height="512" rx="112" fill="#075f63"/>
+  <path d="M108 72h296c21 0 38 17 38 38v292c0 21-17 38-38 38H108c-21 0-38-17-38-38V110c0-21 17-38 38-38Z" fill="#fbf7ef" filter="url(#paper-shadow)"/>
+  <path d="M108 72h296c21 0 38 17 38 38v292c0 21-17 38-38 38H108c-21 0-38-17-38-38V110c0-21 17-38 38-38Z" fill="none" stroke="#d8d0c2" stroke-width="5"/>
+  <path d="M132 116v280" stroke="#075f63" stroke-width="8" stroke-linecap="round" opacity=".72"/>
+
+  <circle cx="174" cy="158" r="28" fill="#e8f1ef" stroke="#075f63" stroke-width="7"/>
+  <path d="m160 157 12 12 25-28" fill="none" stroke="#075f63" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M226 150h142" stroke="#191716" stroke-width="18" stroke-linecap="round"/>
+  <path d="M226 182h92" stroke="#8f9994" stroke-width="12" stroke-linecap="round"/>
+
+  <circle cx="174" cy="256" r="28" fill="#eef3db" stroke="#5e6f3b" stroke-width="7"/>
+  <path d="m160 255 12 12 25-28" fill="none" stroke="#5e6f3b" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+  <path d="M226 248h118" stroke="#191716" stroke-width="18" stroke-linecap="round"/>
+  <path d="M226 280h132" stroke="#8f9994" stroke-width="12" stroke-linecap="round"/>
+
+  <circle cx="174" cy="354" r="28" fill="#f5ede6" stroke="#8f3f4a" stroke-width="7"/>
+  <path d="M226 346h154" stroke="#191716" stroke-width="18" stroke-linecap="round"/>
+  <path d="M226 378h84" stroke="#8f9994" stroke-width="12" stroke-linecap="round"/>
+</svg>

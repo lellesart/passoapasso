@@ -200,7 +200,7 @@ test('habit creation uses the same recurrence and color shape as the interface',
   assert.deepEqual(result.record, {
     id: 'new-habit',
     name: 'Leitura',
-    color: 'bg-purple-100 text-purple-900',
+    color: 'habit-color-purple',
     recurrence: 'Seg, Sex',
     frequency: 'dias_especificos',
     days: ['Seg', 'Sex'],
@@ -219,7 +219,7 @@ test('habit editing updates only requested fields and normalizes recurrence', ()
 
   assert.equal(result.record.name, 'Treino');
   assert.equal(result.record.recurrence, 'Qua, Sáb');
-  assert.equal(result.record.color, 'bg-emerald-100 text-emerald-900');
+  assert.equal(result.record.color, 'habit-color-green');
 });
 
 test('daily habit marking is explicit, date-bound and revalidated', () => {

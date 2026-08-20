@@ -2134,11 +2134,30 @@ h1, h2, h3, h4, h5, h6 {
 .habit-note.bg-rose-100 { background: #f8efee !important; border-left-color: #ad7b7b; }
 .habit-note.bg-purple-100 { background: #f3eff6 !important; border-left-color: #8f7799; }
 .habit-note.bg-stone-200 { background: #f0f3f1 !important; border-left-color: #8f9b96; }
+.habit-swatch-blue { background: #376fcf; }
+.habit-swatch-olive { background: #5e6f3b; }
+.habit-swatch-wine { background: #8f3f4a; }
+.habit-swatch-purple { background: #7543c6; }
+.habit-swatch-green { background: #087f5b; }
+.habit-swatch-graphite { background: #68716d; }
 
 .habit-note-main { min-width: 0; }
 .habit-note-head { margin-bottom: 15px; }
 .habit-note-icon { width: 30px; height: 30px; display: inline-flex; align-items: center; justify-content: center; color: var(--teal); border: 2px solid currentColor; border-radius: 50%; }
+.habit-note-actions { display: flex; align-items: center; gap: 4px; }
 .habit-note-title { margin: 0 0 12px; color: #1c2421; font-family: "DM Mono", "IBM Plex Mono", monospace; font-size: 17px; font-weight: 500; letter-spacing: -.01em; line-height: 1.1; }
+.habit-edit {
+  padding: 3px;
+  color: #7b8a86;
+  background: transparent;
+  border: 0;
+  border-radius: 2px;
+  opacity: 0;
+  transition: color .2s, opacity .2s, background .2s;
+}
+.habit-note:hover .habit-edit,
+.habit-edit:focus-visible { opacity: 1; }
+.habit-edit:hover { color: var(--teal); background: color-mix(in srgb, var(--teal) 10%, transparent); }
 .habit-delete { padding: 3px; color: #98a39f; background: transparent; border: 0; border-radius: 2px; opacity: 0; transition: color .2s, opacity .2s, background .2s; }
 .habit-note:hover .habit-delete, .habit-delete:focus-visible { opacity: 1; }
 .habit-delete:hover { color: #a85454; background: rgba(168, 84, 84, .08); }
@@ -2165,6 +2184,38 @@ h1, h2, h3, h4, h5, h6 {
   --habit-action: rgba(55, 33, 23, .66);
 }
 
+.habit-tone-amber {
+  --habit-bg: #efcf5a;
+  --habit-ink: #3f2f06;
+  --habit-muted: rgba(63, 47, 6, .76);
+  --habit-rule: rgba(63, 47, 6, .22);
+  --habit-icon-bg: rgba(255, 252, 238, .92);
+  --habit-icon-ink: #a77e00;
+  --habit-action: rgba(63, 47, 6, .65);
+}
+
+.habit-tone-olive {
+  --habit-bg: #5e6f3b;
+  --habit-ink: #fff;
+  --habit-muted: rgba(255, 255, 255, .82);
+  --habit-rule: rgba(255, 255, 255, .34);
+  --habit-icon-bg: rgba(255, 255, 255, .94);
+  --habit-icon-ink: #5e6f3b;
+  --habit-action: rgba(255, 255, 255, .74);
+}
+
+.habit-tone-wine,
+.habit-tone-terracotta,
+.habit-tone-rose {
+  --habit-bg: #8f3f4a;
+  --habit-ink: #fff;
+  --habit-muted: rgba(255, 255, 255, .82);
+  --habit-rule: rgba(255, 255, 255, .34);
+  --habit-icon-bg: rgba(255, 255, 255, .94);
+  --habit-icon-ink: #8f3f4a;
+  --habit-action: rgba(255, 255, 255, .74);
+}
+
 .habit-tone-purple {
   --habit-bg: #7543c6;
   --habit-ink: #fff;
@@ -2185,16 +2236,7 @@ h1, h2, h3, h4, h5, h6 {
   --habit-action: rgba(255, 255, 255, .76);
 }
 
-.habit-tone-rose {
-  --habit-bg: #c04961;
-  --habit-ink: #fff;
-  --habit-muted: rgba(255, 255, 255, .84);
-  --habit-rule: rgba(255, 255, 255, .36);
-  --habit-icon-bg: rgba(255, 255, 255, .94);
-  --habit-icon-ink: #ad3e55;
-  --habit-action: rgba(255, 255, 255, .76);
-}
-
+.habit-tone-graphite,
 .habit-tone-neutral {
   --habit-bg: #68716d;
   --habit-ink: #fff;
@@ -2211,10 +2253,20 @@ h1, h2, h3, h4, h5, h6 {
 .habit-note.habit-tone-orange,
 .habit-tile.habit-tone-purple,
 .habit-note.habit-tone-purple,
+.habit-tile.habit-tone-amber,
+.habit-note.habit-tone-amber,
+.habit-tile.habit-tone-olive,
+.habit-note.habit-tone-olive,
+.habit-tile.habit-tone-wine,
+.habit-note.habit-tone-wine,
+.habit-tile.habit-tone-terracotta,
+.habit-note.habit-tone-terracotta,
 .habit-tile.habit-tone-green,
 .habit-note.habit-tone-green,
 .habit-tile.habit-tone-rose,
 .habit-note.habit-tone-rose,
+.habit-tile.habit-tone-graphite,
+.habit-note.habit-tone-graphite,
 .habit-tile.habit-tone-neutral,
 .habit-note.habit-tone-neutral {
   color: var(--habit-ink);
@@ -2266,6 +2318,8 @@ h1, h2, h3, h4, h5, h6 {
 
 .habit-note .habit-note-title { color: var(--habit-ink); }
 .habit-note .habit-note-footer { color: var(--habit-muted); border-top-color: var(--habit-rule); }
+.habit-note .habit-edit { color: var(--habit-action); }
+.habit-note .habit-edit:hover { color: var(--habit-ink); background: color-mix(in srgb, var(--habit-ink) 11%, transparent); }
 .habit-note .habit-delete { color: var(--habit-action); }
 .habit-note .habit-delete:hover { color: var(--habit-ink); background: color-mix(in srgb, var(--habit-ink) 11%, transparent); }
 

@@ -11,19 +11,43 @@ export default defineConfig({
     tailwindcss(),
     VitePWA({
       registerType: 'autoUpdate',
-      includeAssets: ['icon.svg'],
+      includeAssets: [
+        'passo-a-passo-icon-v20260820.svg',
+        'passo-a-passo-icon-180-v20260820.png',
+        'passo-a-passo-icon-192-v20260820.png',
+        'passo-a-passo-icon-512-v20260820.png',
+      ],
+      workbox: {
+        cleanupOutdatedCaches: true,
+        clientsClaim: true,
+        skipWaiting: true,
+      },
       manifest: {
-        name: 'Organizador Pessoal',
-        short_name: 'Organizador Pessoal',
-        description: 'Um organizador minimalista para sua rotina',
+        id: '/?source=pwa-v20260820',
+        name: 'Passo a Passo',
+        short_name: 'Passo a Passo',
+        description: 'Organizador diário',
+        lang: 'pt-BR',
         theme_color: '#FAF9F6',
         background_color: '#FAF9F6',
         display: 'standalone',
         icons: [
           {
-            src: 'icon.svg',
+            src: 'passo-a-passo-icon-v20260820.svg',
             sizes: '192x192 512x512',
             type: 'image/svg+xml',
+            purpose: 'any maskable'
+          },
+          {
+            src: 'passo-a-passo-icon-192-v20260820.png',
+            sizes: '192x192',
+            type: 'image/png',
+            purpose: 'any maskable'
+          },
+          {
+            src: 'passo-a-passo-icon-512-v20260820.png',
+            sizes: '512x512',
+            type: 'image/png',
             purpose: 'any maskable'
           }
         ]
