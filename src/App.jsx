@@ -775,7 +775,7 @@ function ViewLoading() {
   );
 }
 
-function SyncStatusBadge({ status }) {
+function SyncStatusBadge({ status, reducedMotion }) {
   const state = status?.state || 'idle';
   const Icon = state === 'saving'
     ? Loader2
@@ -788,7 +788,15 @@ function SyncStatusBadge({ status }) {
         : Cloud;
 
   return (
-    <div className={`sync-status-badge sync-status-${state}`} role="status" aria-live="polite">
+    <motion.div
+      className={`sync-status-badge sync-status-${state}`}
+      role="status"
+      aria-live="polite"
+      initial={reducedMotion ? false : { opacity: 0, y: -4 }}
+      animate={{ opacity: 1, y: 0 }}
+      exit={reducedMotion ? { opacity: 0 } : { opacity: 0, y: -3 }}
+      transition={{ duration: reducedMotion ? 0.01 : 0.2, ease: 'easeOut' }}
+    >
       <Icon className={`w-3.5 h-3.5 ${state === 'saving' ? 'animate-spin' : ''}`} />
       <div>
         <span>{status?.label || 'Aguardando alterações'}</span>
@@ -798,12 +806,44 @@ function SyncStatusBadge({ status }) {
             : status?.detail || 'Dados vinculados à conta ativa'}
         </small>
       </div>
-    </div>
+    </motion.div>
   );
+}
+
+function useMediaQuery(query) {
+  const [matches, setMatches] = useState(() => (
+    typeof window !== 'undefined' && typeof window.matchMedia === 'function'
+      ? window.matchMedia(query).matches
+      : false
+  ));
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return undefined;
+
+    const mediaQuery = window.matchMedia(query);
+    const updateMatches = (event) => setMatches(event.matches);
+    setMatches(mediaQuery.matches);
+    if (typeof mediaQuery.addEventListener === 'function') {
+      mediaQuery.addEventListener('change', updateMatches);
+    } else {
+      mediaQuery.addListener(updateMatches);
+    }
+
+    return () => {
+      if (typeof mediaQuery.removeEventListener === 'function') {
+        mediaQuery.removeEventListener('change', updateMatches);
+      } else {
+        mediaQuery.removeListener(updateMatches);
+      }
+    };
+  }, [query]);
+
+  return matches;
 }
 
 export default function App() {
   const prefersReducedMotion = useReducedMotion();
+  const isMobileViewport = useMediaQuery('(max-width: 700px)');
   const appMainRef = useRef(null);
   const [activeTab, setActiveTab] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -844,18 +884,30 @@ export default function App() {
     const animationFrame = window.requestAnimationFrame(() => {
       appMainRef.current?.scrollTo({
         top: 0,
-        behavior: prefersReducedMotion ? 'auto' : 'smooth'
+        behavior: prefersReducedMotion || isMobileViewport ? 'auto' : 'smooth'
       });
     });
 
     return () => window.cancelAnimationFrame(animationFrame);
-  }, [activeTab, prefersReducedMotion]);
+  }, [activeTab, isMobileViewport, prefersReducedMotion]);
 
   // Authentication State
   const [user, setUser] = useState(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [googleAccessToken, setGoogleAccessToken] = useState(null);
   const [syncStatus, setSyncStatus] = useState(createInitialSyncStatus);
+
+  useEffect(() => {
+    if (syncStatus.state !== 'saved') return undefined;
+
+    const timeoutId = window.setTimeout(() => {
+      setSyncStatus((currentStatus) => (
+        currentStatus.state === 'saved' ? createInitialSyncStatus() : currentStatus
+      ));
+    }, 3200);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [syncStatus.state, syncStatus.updatedAt]);
 
   useEffect(() => {
     const markOffline = () => {
@@ -1565,7 +1617,15 @@ export default function App() {
         <Menu className="w-5 h-5" />
       </button>
 
-      <SyncStatusBadge status={syncStatus} />
+      <AnimatePresence>
+        {syncStatus.state !== 'idle' && (
+          <SyncStatusBadge
+            key={`${syncStatus.state}-${syncStatus.updatedAt || syncStatus.label}`}
+            status={syncStatus}
+            reducedMotion={prefersReducedMotion}
+          />
+        )}
+      </AnimatePresence>
 
       {/* O Toast agora é gerenciado globalmente pelo Sonner (<Toaster />) */}
 
@@ -1689,18 +1749,26 @@ export default function App() {
       {/* Conteúdo Principal */}
       <div className="app-content min-w-0">
         <main ref={appMainRef} className="app-main">
-          <AnimatePresence initial={false} mode="popLayout">
+          <AnimatePresence initial={false} mode="wait">
             <motion.div
               key={activeTab}
-              initial={prefersReducedMotion ? false : { opacity: 0, y: 6 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={prefersReducedMotion ? { opacity: 1 } : { opacity: 0, y: -3 }}
+              initial={prefersReducedMotion
+                ? false
+                : isMobileViewport
+                  ? { opacity: 0 }
+                  : { opacity: 0, y: 4 }}
+              animate={isMobileViewport ? { opacity: 1 } : { opacity: 1, y: 0 }}
+              exit={prefersReducedMotion
+                ? { opacity: 1 }
+                : isMobileViewport
+                  ? { opacity: 0 }
+                  : { opacity: 0, y: -2 }}
               transition={prefersReducedMotion
                 ? { duration: 0.01 }
                 : {
-                    duration: 0.42,
+                    duration: isMobileViewport ? 0.3 : 0.34,
                     ease: [0.22, 1, 0.36, 1],
-                    opacity: { duration: 0.28, ease: 'easeOut' }
+                    opacity: { duration: isMobileViewport ? 0.24 : 0.26, ease: 'easeOut' }
                   }}
               className="editorial-view page-transition max-w-5xl mx-auto space-y-8"
             >
