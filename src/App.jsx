@@ -810,30 +810,28 @@ function SyncStatusBadge({ status, reducedMotion }) {
 }
 
 const MENU_DRAWER_VARIANTS = {
-  open: {
-    clipPath: 'circle(2600px at var(--menu-drawer-origin-x) var(--menu-drawer-origin-y))',
+  open: (revealRadius = 1200) => ({
+    clipPath: `circle(${revealRadius}px at var(--menu-drawer-origin-x) var(--menu-drawer-origin-y))`,
     opacity: 1,
     transition: {
       clipPath: {
-        type: 'spring',
-        stiffness: 34,
-        damping: 20,
-        restDelta: 1.5,
+        type: 'tween',
+        duration: 0.46,
+        ease: [0.22, 1, 0.36, 1],
       },
-      opacity: { duration: 0.12 },
+      opacity: { duration: 0.08 },
     },
-  },
+  }),
   closed: {
     clipPath: 'circle(20px at var(--menu-drawer-origin-x) var(--menu-drawer-origin-y))',
     opacity: 0,
     transition: {
       clipPath: {
-        delay: 0.08,
-        type: 'spring',
-        stiffness: 380,
-        damping: 42,
+        type: 'tween',
+        duration: 0.38,
+        ease: [0.4, 0, 0.2, 1],
       },
-      opacity: { delay: 0.18, duration: 0.08 },
+      opacity: { delay: 0.3, duration: 0.08 },
     },
   },
 };
@@ -959,6 +957,9 @@ function useMediaQuery(query) {
 export default function App() {
   const prefersReducedMotion = useReducedMotion();
   const isMobileViewport = useMediaQuery('(max-width: 700px)');
+  const menuDrawerRevealRadius = typeof window !== 'undefined'
+    ? Math.ceil(Math.hypot(Math.min(380, window.innerWidth), window.innerHeight) + 48)
+    : 1200;
   const appMainRef = useRef(null);
   const [activeTab, setActiveTab] = useState(() => {
     if (typeof window !== 'undefined') {
@@ -1790,6 +1791,7 @@ export default function App() {
             <motion.div
               id="app-menu-drawer"
               variants={MENU_DRAWER_VARIANTS}
+              custom={menuDrawerRevealRadius}
               initial={prefersReducedMotion ? { opacity: 0 } : 'closed'}
               animate={prefersReducedMotion ? { opacity: 1 } : 'open'}
               exit={prefersReducedMotion ? { opacity: 0 } : 'closed'}
