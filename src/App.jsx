@@ -1797,7 +1797,11 @@ export default function App() {
       {/* O Toast agora é gerenciado globalmente pelo Sonner (<Toaster />) */}
 
       {/* DRAWER ÚNICO A DIREITA */}
-      <AnimatePresence>
+      <AnimatePresence
+        onExitComplete={() => {
+          if (pageTransitionSource === 'drawer') setPageTransitionSource('standard');
+        }}
+      >
         {mobileMenuOpen && (
           <>
             <motion.div
@@ -1943,7 +1947,6 @@ export default function App() {
               mobile: isMobileViewport,
               reducedMotion: prefersReducedMotion,
             }}
-            onExitComplete={() => setPageTransitionSource('standard')}
           >
             <motion.div
               key={activeTab}
