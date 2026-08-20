@@ -11,10 +11,14 @@
             "id": "37b732b13374d1db",
             "type": "leaf",
             "state": {
-              "type": "graph",
-              "state": {},
-              "icon": "lucide-git-fork",
-              "title": "Visualização em gráfico"
+              "type": "markdown",
+              "state": {
+                "file": "obsidian-vault/Checklist_Sincronizacao_Usuarios.md",
+                "mode": "source",
+                "source": false
+              },
+              "icon": "lucide-file",
+              "title": "Checklist_Sincronizacao_Usuarios"
             }
           }
         ]
@@ -180,6 +184,17 @@
   },
   "active": "37b732b13374d1db",
   "lastOpenFiles": [
+    "dist/server/index.js",
+    "dist/server",
+    "dist/workbox-9c191d2f.js",
+    "dist/sw.js",
+    "dist/registerSW.js",
+    "dist/manifest.webmanifest",
+    "dist/index.html",
+    "dist/assets/send-D_Qbgr0W.js",
+    "dist/assets/index-r0tM5XAc.css",
+    "dist/assets/index-CQT1RHbJ.js",
+    "dist/assets/SecondaryViews-ldqvpEc2.js",
     "Sem título.canvas",
     "obsidian-vault/Home.md",
     "obsidian-vault/Setup_Firebase.md",

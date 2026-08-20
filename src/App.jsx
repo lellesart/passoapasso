@@ -29,6 +29,7 @@ import {
   Activity,
   GraduationCap,
   Cloud,
+  CloudOff,
   CloudRain,
   Sun,
   CloudLightning,
@@ -608,6 +609,43 @@ const summarizeOrganizerDocument = (currentUser, snapshot) => {
   };
 };
 
+const SYNC_FIELD_LABELS = {
+  tasks: 'tarefas',
+  habits: 'hábitos',
+  notes: 'notas',
+  events: 'eventos',
+  dailyHabitsState: 'hábitos do dia',
+  aiActionAudit: 'histórico da IA',
+};
+
+const createInitialSyncStatus = () => ({
+  state: 'idle',
+  label: 'Aguardando alterações',
+  detail: 'Os dados serão salvos nesta conta.',
+  updatedAt: null,
+});
+
+const formatSyncStatusTime = (value) => {
+  if (!value) return '';
+  return new Intl.DateTimeFormat('pt-BR', {
+    hour: '2-digit',
+    minute: '2-digit'
+  }).format(new Date(value));
+};
+
+const persistOrganizerChange = async (syncToFirestore, field, data, successMessage) => {
+  if (!syncToFirestore) {
+    toast.error('Sincronização indisponível. A alteração ficou apenas local.');
+    return false;
+  }
+
+  const result = await syncToFirestore(field, data);
+  if (!result.ok) return false;
+
+  if (successMessage) toast.success(successMessage);
+  return true;
+};
+
 const DAYS_OF_WEEK = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 const MONTH_NAMES = [
   'Janeiro', 'Fevereiro', 'Março', 'Abril', 'Maio', 'Junho',
@@ -737,6 +775,33 @@ function ViewLoading() {
   );
 }
 
+function SyncStatusBadge({ status }) {
+  const state = status?.state || 'idle';
+  const Icon = state === 'saving'
+    ? Loader2
+    : state === 'offline'
+      ? CloudOff
+      : state === 'error'
+      ? AlertCircle
+      : state === 'saved'
+        ? CheckCircle2
+        : Cloud;
+
+  return (
+    <div className={`sync-status-badge sync-status-${state}`} role="status" aria-live="polite">
+      <Icon className={`w-3.5 h-3.5 ${state === 'saving' ? 'animate-spin' : ''}`} />
+      <div>
+        <span>{status?.label || 'Aguardando alterações'}</span>
+        <small>
+          {state === 'saved' && status?.updatedAt
+            ? `Último salvamento às ${formatSyncStatusTime(status.updatedAt)}`
+            : status?.detail || 'Dados vinculados à conta ativa'}
+        </small>
+      </div>
+    </div>
+  );
+}
+
 export default function App() {
   const prefersReducedMotion = useReducedMotion();
   const appMainRef = useRef(null);
@@ -790,6 +855,36 @@ export default function App() {
   const [user, setUser] = useState(null);
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [googleAccessToken, setGoogleAccessToken] = useState(null);
+  const [syncStatus, setSyncStatus] = useState(createInitialSyncStatus);
+
+  useEffect(() => {
+    const markOffline = () => {
+      setSyncStatus({
+        state: 'offline',
+        label: 'Modo local',
+        detail: 'Sem conexão. Alterações podem não sincronizar.',
+        updatedAt: new Date().toISOString(),
+      });
+    };
+
+    const markOnline = () => {
+      setSyncStatus({
+        state: 'idle',
+        label: 'Conexão restaurada',
+        detail: 'Novas alterações serão sincronizadas.',
+        updatedAt: new Date().toISOString(),
+      });
+    };
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) markOffline();
+
+    window.addEventListener('offline', markOffline);
+    window.addEventListener('online', markOnline);
+    return () => {
+      window.removeEventListener('offline', markOffline);
+      window.removeEventListener('online', markOnline);
+    };
+  }, []);
 
   useEffect(() => {
     let unsubscribeDb = null;
@@ -803,10 +898,16 @@ export default function App() {
         unsubscribeDb = null;
       }
 
-      setUser(currentUser);
+        setUser(currentUser);
       
       if (currentUser) {
         setIsAuthLoading(true);
+        setSyncStatus({
+          state: 'saving',
+          label: 'Carregando registros',
+          detail: 'Buscando dados vinculados a esta conta.',
+          updatedAt: null,
+        });
         const emptyData = createEmptyOrganizerData();
         setTasks(emptyData.tasks);
         setHabits(emptyData.habits);
@@ -838,6 +939,12 @@ export default function App() {
         } catch (error) {
           if (runId !== authRunId) return;
           console.error('Erro ao preparar documento do usuário:', error);
+          setSyncStatus({
+            state: 'error',
+            label: 'Erro ao preparar dados',
+            detail: 'Não foi possível abrir o documento desta conta.',
+            updatedAt: new Date().toISOString(),
+          });
           toast.error('Não foi possível preparar seus dados. Tente sair e entrar novamente.');
           setIsAuthLoading(false);
           return;
@@ -875,6 +982,12 @@ export default function App() {
                 });
               }
             }
+            setSyncStatus({
+              state: 'saved',
+              label: 'Dados carregados',
+              detail: 'Registros sincronizados com esta conta.',
+              updatedAt: new Date().toISOString(),
+            });
             setIsAuthLoading(false);
           } else {
             const initialData = createEmptyOrganizerData();
@@ -886,11 +999,23 @@ export default function App() {
             aiActionAuditRef.current = initialData.aiActionAudit;
             setAIActionAudit(initialData.aiActionAudit);
             setDoc(userRef, createEmptyUserDocument(currentUser)).catch(console.error);
+            setSyncStatus({
+              state: 'saved',
+              label: 'Conta preparada',
+              detail: 'Novo organizador iniciado vazio.',
+              updatedAt: new Date().toISOString(),
+            });
             setIsAuthLoading(false);
           }
         }, (error) => {
           if (runId !== authRunId) return;
           console.error('Erro ao carregar dados do usuário:', error);
+          setSyncStatus({
+            state: 'error',
+            label: 'Erro ao carregar dados',
+            detail: 'A conexão com seus registros falhou.',
+            updatedAt: new Date().toISOString(),
+          });
           toast.error('Não foi possível carregar seus dados. Tente sair e entrar novamente.');
           setIsAuthLoading(false);
         });
@@ -905,6 +1030,7 @@ export default function App() {
         aiActionAuditRef.current = emptyData.aiActionAudit;
         setAIActionAudit(emptyData.aiActionAudit);
         setGoogleAccessToken(null);
+        setSyncStatus(createInitialSyncStatus());
         setIsAuthLoading(false);
       }
     });
@@ -942,6 +1068,7 @@ export default function App() {
       setDailyHabitsState(emptyData.dailyHabitsState);
       aiActionAuditRef.current = emptyData.aiActionAudit;
       setAIActionAudit(emptyData.aiActionAudit);
+      setSyncStatus(createInitialSyncStatus());
       await signOut(auth);
       toast.success("Você saiu da conta.");
     } catch (error) {
@@ -951,16 +1078,68 @@ export default function App() {
   };
 
   const syncToFirestore = useCallback(async (field, data) => {
-    if (!user) return { ok: false, error: 'Usuário não autenticado.' };
+    const fieldLabel = SYNC_FIELD_LABELS[field] || 'dados';
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      const message = 'Sem conexão com a internet.';
+      setSyncStatus({
+        state: 'offline',
+        label: 'Modo local',
+        detail: `Não foi possível salvar ${fieldLabel}.`,
+        updatedAt: new Date().toISOString(),
+      });
+      toast.error('Alteração feita apenas localmente.', {
+        description: 'Conecte-se à internet e tente novamente antes de fechar o app.',
+      });
+      return { ok: false, error: message };
+    }
+
+    if (!user) {
+      const message = 'Usuário não autenticado.';
+      setSyncStatus({
+        state: 'error',
+        label: 'Falha ao sincronizar',
+        detail: message,
+        updatedAt: new Date().toISOString(),
+      });
+      toast.error('Alteração não sincronizada.', {
+        description: message,
+      });
+      return { ok: false, error: message };
+    }
+
+    setSyncStatus({
+      state: 'saving',
+      label: `Salvando ${fieldLabel}`,
+      detail: 'Enviando alteração para sua conta.',
+      updatedAt: null,
+    });
+
     try {
       await setDoc(doc(db, 'users', user.uid), {
         [field]: data,
         ...createOrganizerMetadata(user),
       }, { merge: true });
-      return { ok: true };
+      const savedAt = new Date().toISOString();
+      setSyncStatus({
+        state: 'saved',
+        label: `${fieldLabel.charAt(0).toUpperCase()}${fieldLabel.slice(1)} salvos`,
+        detail: 'Alteração confirmada no Firebase.',
+        updatedAt: savedAt,
+      });
+      return { ok: true, updatedAt: savedAt };
     } catch (e) {
       console.error(`Erro ao sincronizar ${field}:`, e);
-      return { ok: false, error: e.message || `Falha ao sincronizar ${field}.` };
+      const message = e.message || `Falha ao sincronizar ${fieldLabel}.`;
+      setSyncStatus({
+        state: 'error',
+        label: 'Falha ao sincronizar',
+        detail: `${fieldLabel}: ${message}`,
+        updatedAt: new Date().toISOString(),
+      });
+      toast.error('Alteração feita apenas localmente.', {
+        description: `Não consegui salvar ${fieldLabel}. Tente novamente antes de fechar o app.`,
+      });
+      return { ok: false, error: message };
     }
   }, [user]);
 
@@ -1386,6 +1565,8 @@ export default function App() {
         <Menu className="w-5 h-5" />
       </button>
 
+      <SyncStatusBadge status={syncStatus} />
+
       {/* O Toast agora é gerenciado globalmente pelo Sonner (<Toaster />) */}
 
       {/* DRAWER ÚNICO A DIREITA */}
@@ -1730,7 +1911,7 @@ function DashboardView({
   const [newNoteCategory, setNewNoteCategory] = useState('Trabalho');
   const [newShoppingItems, setNewShoppingItems] = useState(['']);
 
-  const onDragEnd = (result) => {
+  const onDragEnd = async (result) => {
     if (!result.destination) return;
     const { source, destination } = result;
 
@@ -1763,12 +1944,13 @@ function DashboardView({
     ];
     
     setTasks(newTasks);
-    if(syncToFirestore) syncToFirestore('tasks', newTasks);
+    await persistOrganizerChange(syncToFirestore, 'tasks', newTasks);
   };
 
-  const handleSaveNote = (e) => {
+  const handleSaveNote = async (e) => {
     e.preventDefault();
     if (!newNoteTitle.trim()) return;
+    const successMessage = newNoteCategory === 'Compras' ? 'Lista de compras criada!' : 'Nota criada com sucesso!';
     const noteId = Date.now().toString();
     const shoppingItems = newNoteCategory === 'Compras'
       ? createShoppingItems(newShoppingItems, noteId)
@@ -1782,37 +1964,39 @@ function DashboardView({
     };
     const updatedNotes = [newNote, ...notes];
     setNotes(updatedNotes);
-    if(syncToFirestore) syncToFirestore('notes', updatedNotes);
     setNewNoteTitle('');
     setNewNoteContent('');
     setNewShoppingItems(['']);
     setNewNoteCategory('Trabalho');
     setIsNoteDrawerOpen(false);
-    toast.success(newNoteCategory === 'Compras' ? 'Lista de compras criada!' : 'Nota criada com sucesso!');
+    await persistOrganizerChange(syncToFirestore, 'notes', updatedNotes, successMessage);
   };
 
-  const handleToggleShoppingItem = (noteId, itemIndex) => {
+  const handleToggleShoppingItem = async (noteId, itemIndex) => {
     const updatedNotes = toggleShoppingItemInNotes(notes, noteId, itemIndex);
     setNotes(updatedNotes);
     setSelectedNote(updatedNotes.find(note => note.id === noteId) || null);
-    if(syncToFirestore) syncToFirestore('notes', updatedNotes);
+    await persistOrganizerChange(syncToFirestore, 'notes', updatedNotes);
   };
 
-  const handleUpdateTask = (updatedTask) => {
+  const handleUpdateTask = async (updatedTask) => {
     const updatedTasks = tasks.map(task => task.id === updatedTask.id ? updatedTask : task);
     setTasks(updatedTasks);
-    if(syncToFirestore) syncToFirestore('tasks', updatedTasks);
     setEditingTask(null);
-    toast.success('Tarefa atualizada com sucesso!');
+    await persistOrganizerChange(syncToFirestore, 'tasks', updatedTasks, 'Tarefa atualizada com sucesso!');
   };
 
-  const handleUpdateNote = (updatedNote) => {
+  const handleUpdateNote = async (updatedNote) => {
     const updatedNotes = notes.map(note => note.id === updatedNote.id ? updatedNote : note);
     setNotes(updatedNotes);
     setSelectedNote(updatedNote);
     setEditingNote(null);
-    if(syncToFirestore) syncToFirestore('notes', updatedNotes);
-    toast.success(updatedNote.category === 'Compras' ? 'Lista atualizada com sucesso!' : 'Nota atualizada com sucesso!');
+    await persistOrganizerChange(
+      syncToFirestore,
+      'notes',
+      updatedNotes,
+      updatedNote.category === 'Compras' ? 'Lista atualizada com sucesso!' : 'Nota atualizada com sucesso!'
+    );
   };
 
   const availableCategories = NOTE_CATEGORIES;
@@ -1966,11 +2150,10 @@ function DashboardView({
                                 task={t}
                                 showStatusAction={false}
                                 onEdit={() => setEditingTask(t)}
-                                onDelete={() => {
+                                onDelete={async () => {
                                   const updatedTasks = tasks.map(task => task.id === t.id ? { ...task, deleted: true } : task);
                                   setTasks(updatedTasks);
-                                  if(syncToFirestore) syncToFirestore('tasks', updatedTasks);
-                                  toast.success('Tarefa movida para a Lixeira');
+                                  await persistOrganizerChange(syncToFirestore, 'tasks', updatedTasks, 'Tarefa movida para a Lixeira');
                                 }}
                               />
                             </div>
@@ -2022,11 +2205,10 @@ function DashboardView({
                                 task={t}
                                 showStatusAction={false}
                                 onEdit={() => setEditingTask(t)}
-                                onDelete={() => {
+                                onDelete={async () => {
                                   const updatedTasks = tasks.map(task => task.id === t.id ? { ...task, deleted: true } : task);
                                   setTasks(updatedTasks);
-                                  if(syncToFirestore) syncToFirestore('tasks', updatedTasks);
-                                  toast.success('Tarefa movida para a Lixeira');
+                                  await persistOrganizerChange(syncToFirestore, 'tasks', updatedTasks, 'Tarefa movida para a Lixeira');
                                 }}
                               />
                             </div>
@@ -2079,11 +2261,10 @@ function DashboardView({
                                 completed
                                 showStatusAction={false}
                                 onEdit={() => setEditingTask(t)}
-                                onDelete={() => {
+                                onDelete={async () => {
                                   const updatedTasks = tasks.map(task => task.id === t.id ? { ...task, deleted: true } : task);
                                   setTasks(updatedTasks);
-                                  if(syncToFirestore) syncToFirestore('tasks', updatedTasks);
-                                  toast.success('Tarefa movida para a Lixeira');
+                                  await persistOrganizerChange(syncToFirestore, 'tasks', updatedTasks, 'Tarefa movida para a Lixeira');
                                 }}
                               />
                             </div>
@@ -2399,10 +2580,14 @@ function CalendarView({ events, setEvents, syncToFirestore, googleAccessToken })
 
     const updatedEvents = [...events, newEvent];
     setEvents(updatedEvents);
-    if(syncToFirestore) syncToFirestore('events', updatedEvents);
-    toast.success(syncedWithGoogle ? 'Evento adicionado ao Google Calendar!' : 'Evento adicionado ao calendário!');
+    const saved = await persistOrganizerChange(
+      syncToFirestore,
+      'events',
+      updatedEvents,
+      syncedWithGoogle ? 'Evento adicionado ao Google Calendar!' : 'Evento adicionado ao calendário!'
+    );
     
-    setEventTitle('');
+    if (saved) setEventTitle('');
     setIsAddingEvent(false);
   };
 
@@ -2505,12 +2690,11 @@ function CalendarView({ events, setEvents, syncToFirestore, googleAccessToken })
                   <button onClick={async () => {
                     const updatedEvents = events.map(e => e.id === ev.id ? { ...e, deleted: true } : e);
                     setEvents(updatedEvents);
-                    if(syncToFirestore) syncToFirestore('events', updatedEvents);
                     
                     if (ev.googleEventId && googleAccessToken) {
                       await deleteEventFromGoogleCalendar(ev.googleEventId, googleAccessToken);
                     }
-                    toast.success('Evento movido para a Lixeira');
+                    await persistOrganizerChange(syncToFirestore, 'events', updatedEvents, 'Evento movido para a Lixeira');
                   }} className="text-stone-500 hover:text-rose-600 opacity-0 group-hover:opacity-100 transition-opacity"><Trash2 className="w-4 h-4" /></button>
                 </div>
               );
@@ -2531,7 +2715,7 @@ function TasksView({ tasks, setTasks, syncToFirestore }) {
   const [newTaskDueDate, setNewTaskDueDate] = useState('');
   const [editingTask, setEditingTask] = useState(null);
 
-  const addTask = (e) => {
+  const addTask = async (e) => {
     e.preventDefault();
     if (!newTaskTitle.trim()) return;
     const updatedTasks = [...tasks, {
@@ -2543,18 +2727,16 @@ function TasksView({ tasks, setTasks, syncToFirestore }) {
       dueDate: newTaskDueDate || null
     }];
     setTasks(updatedTasks);
-    if(syncToFirestore) syncToFirestore('tasks', updatedTasks);
     setNewTaskTitle('');
     setNewTaskDueDate('');
-    toast.success('Tarefa criada com sucesso!');
+    await persistOrganizerChange(syncToFirestore, 'tasks', updatedTasks, 'Tarefa criada com sucesso!');
   };
 
-  const handleUpdateTask = (updatedTask) => {
+  const handleUpdateTask = async (updatedTask) => {
     const updatedTasks = tasks.map(task => task.id === updatedTask.id ? updatedTask : task);
     setTasks(updatedTasks);
-    if(syncToFirestore) syncToFirestore('tasks', updatedTasks);
     setEditingTask(null);
-    toast.success('Tarefa atualizada com sucesso!');
+    await persistOrganizerChange(syncToFirestore, 'tasks', updatedTasks, 'Tarefa atualizada com sucesso!');
   };
 
   return (
@@ -2607,17 +2789,16 @@ function TasksView({ tasks, setTasks, syncToFirestore }) {
                     task={t}
                     completed={statusKey === 'concluido'}
                     onEdit={() => setEditingTask(t)}
-                    onToggle={() => {
+                    onToggle={async () => {
                       const nextStatus = statusKey === 'a_fazer' ? 'em_curso' : statusKey === 'em_curso' ? 'concluido' : 'a_fazer';
                       const updatedTasks = tasks.map(task => task.id === t.id ? { ...task, status: nextStatus } : task);
                       setTasks(updatedTasks);
-                      if(syncToFirestore) syncToFirestore('tasks', updatedTasks);
+                      await persistOrganizerChange(syncToFirestore, 'tasks', updatedTasks);
                     }}
-                    onDelete={() => {
+                    onDelete={async () => {
                       const updatedTasks = tasks.map(task => task.id === t.id ? { ...task, deleted: true } : task);
                       setTasks(updatedTasks);
-                      if(syncToFirestore) syncToFirestore('tasks', updatedTasks);
-                      toast.success('Tarefa movida para a Lixeira');
+                      await persistOrganizerChange(syncToFirestore, 'tasks', updatedTasks, 'Tarefa movida para a Lixeira');
                     }}
                   />
                 </div>
@@ -2656,7 +2837,7 @@ function HabitsView({ habits, setHabits, syncToFirestore }) {
     );
   };
 
-  const handleAddHabit = (e) => {
+  const handleAddHabit = async (e) => {
     e.preventDefault();
     if (!newHabitName.trim()) return;
 
@@ -2677,21 +2858,19 @@ function HabitsView({ habits, setHabits, syncToFirestore }) {
     
     const updatedHabits = [newHabit, ...habits];
     setHabits(updatedHabits);
-    if(syncToFirestore) syncToFirestore('habits', updatedHabits);
     setNewHabitName('');
     setRecurrenceType('todos_dias');
     setSelectedDays([]);
-    toast.success('Hábito criado com sucesso!');
+    await persistOrganizerChange(syncToFirestore, 'habits', updatedHabits, 'Hábito criado com sucesso!');
   };
 
-  const handleUpdateHabit = (updatedHabit) => {
+  const handleUpdateHabit = async (updatedHabit) => {
     const updatedHabits = habits.map(habit => (
       habit.id === updatedHabit.id ? updatedHabit : habit
     ));
     setHabits(updatedHabits);
-    if (syncToFirestore) syncToFirestore('habits', updatedHabits);
     setEditingHabit(null);
-    toast.success('Hábito atualizado com sucesso!');
+    await persistOrganizerChange(syncToFirestore, 'habits', updatedHabits, 'Hábito atualizado com sucesso!');
   };
 
   return (
@@ -2779,11 +2958,10 @@ function HabitsView({ habits, setHabits, syncToFirestore }) {
                       <button
                         type="button"
                         className="habit-delete"
-                        onClick={() => {
+                        onClick={async () => {
                           const updatedHabits = habits.map(habit => habit.id === h.id ? { ...habit, deleted: true } : habit);
                           setHabits(updatedHabits);
-                          if(syncToFirestore) syncToFirestore('habits', updatedHabits);
-                          toast.success('Hábito movido para a Lixeira');
+                          await persistOrganizerChange(syncToFirestore, 'habits', updatedHabits, 'Hábito movido para a Lixeira');
                         }}
                       >
                         <Trash2 className="w-4 h-4" />
@@ -2826,9 +3004,10 @@ function NotesView({ notes, setNotes, syncToFirestore }) {
   const [editingNote, setEditingNote] = useState(null);
   const availableCategories = NOTE_CATEGORIES;
 
-  const handleAddNote = (e) => {
+  const handleAddNote = async (e) => {
     e.preventDefault();
     if (!newNoteTitle.trim()) return;
+    const successMessage = newNoteCategory === 'Compras' ? 'Lista de compras criada!' : 'Nota criada com sucesso!';
 
     const noteId = Date.now().toString();
     const shoppingItems = newNoteCategory === 'Compras'
@@ -2844,28 +3023,31 @@ function NotesView({ notes, setNotes, syncToFirestore }) {
 
     const updatedNotes = [newNote, ...notes];
     setNotes(updatedNotes);
-    if(syncToFirestore) syncToFirestore('notes', updatedNotes);
     setNewNoteTitle('');
     setNewNoteContent('');
     setNewShoppingItems(['']);
     setNewNoteCategory('Trabalho');
-    toast.success(newNoteCategory === 'Compras' ? 'Lista de compras criada!' : 'Nota criada com sucesso!');
+    await persistOrganizerChange(syncToFirestore, 'notes', updatedNotes, successMessage);
   };
 
-  const handleToggleShoppingItem = (noteId, itemIndex) => {
+  const handleToggleShoppingItem = async (noteId, itemIndex) => {
     const updatedNotes = toggleShoppingItemInNotes(notes, noteId, itemIndex);
     setNotes(updatedNotes);
     setSelectedNote(updatedNotes.find(note => note.id === noteId) || null);
-    if(syncToFirestore) syncToFirestore('notes', updatedNotes);
+    await persistOrganizerChange(syncToFirestore, 'notes', updatedNotes);
   };
 
-  const handleUpdateNote = (updatedNote) => {
+  const handleUpdateNote = async (updatedNote) => {
     const updatedNotes = notes.map(note => note.id === updatedNote.id ? updatedNote : note);
     setNotes(updatedNotes);
     setSelectedNote(updatedNote);
     setEditingNote(null);
-    if(syncToFirestore) syncToFirestore('notes', updatedNotes);
-    toast.success(updatedNote.category === 'Compras' ? 'Lista atualizada com sucesso!' : 'Nota atualizada com sucesso!');
+    await persistOrganizerChange(
+      syncToFirestore,
+      'notes',
+      updatedNotes,
+      updatedNote.category === 'Compras' ? 'Lista atualizada com sucesso!' : 'Nota atualizada com sucesso!'
+    );
   };
 
   const activeNotes = notes.filter(n => !n.deleted);
@@ -2951,11 +3133,10 @@ function NotesView({ notes, setNotes, syncToFirestore }) {
                   </button>
                   <button
                     type="button"
-                    onClick={() => {
+                    onClick={async () => {
                       const updatedNotes = notes.map(note => note.id === n.id ? { ...note, deleted: true } : note);
                       setNotes(updatedNotes);
-                      if(syncToFirestore) syncToFirestore('notes', updatedNotes);
-                      toast.success('Nota movida para a Lixeira');
+                      await persistOrganizerChange(syncToFirestore, 'notes', updatedNotes, 'Nota movida para a Lixeira');
                     }}
                     className="notes-delete-button"
                     aria-label="Mover nota para a lixeira"
@@ -3049,10 +3230,10 @@ function PomodoroView({ tasks, setTasks, syncToFirestore }) {
             <p>Deseja marcar a tarefa focada como concluída?</p>
             <div className="editorial-toast-prompt-actions">
               <button 
-                onClick={() => {
+                onClick={async () => {
                   const updatedTasks = tasks.map(task => task.id === selectedTaskId ? { ...task, status: 'concluido' } : task);
                   setTasks(updatedTasks);
-                  if(syncToFirestore) syncToFirestore('tasks', updatedTasks);
+                  await persistOrganizerChange(syncToFirestore, 'tasks', updatedTasks, 'Tarefa concluída com a sessão de foco.');
                   toast.dismiss(t);
                   setSelectedTaskId('');
                 }}
@@ -3136,18 +3317,17 @@ function TrashView({ tasks, setTasks, habits, setHabits, events, setEvents, note
   const deletedNotes = notes.filter(n => n.deleted);
   const totalDeleted = deletedTasks.length + deletedHabits.length + deletedEvents.length + deletedNotes.length;
 
-  const handleRestore = (collection, setCollection, id, stateName) => {
+  const handleRestore = async (collection, setCollection, id, stateName) => {
     const updated = collection.map(item => item.id === id ? { ...item, deleted: false } : item);
     setCollection(updated);
-    if(syncToFirestore) syncToFirestore(stateName, updated);
-    toast.success('Item restaurado com sucesso!');
+    await persistOrganizerChange(syncToFirestore, stateName, updated, 'Item restaurado com sucesso!');
   };
 
-  const handlePermanentDelete = (collection, setCollection, id, stateName) => {
+  const handlePermanentDelete = async (collection, setCollection, id, stateName) => {
     const updated = collection.filter(item => item.id !== id);
     setCollection(updated);
-    if(syncToFirestore) syncToFirestore(stateName, updated);
-    toast.error('Item excluído permanentemente');
+    const saved = await persistOrganizerChange(syncToFirestore, stateName, updated);
+    if (saved) toast.error('Item excluído permanentemente');
   };
 
   const isEmpty = deletedTasks.length === 0 && deletedHabits.length === 0 && deletedEvents.length === 0 && deletedNotes.length === 0;

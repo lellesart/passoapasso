@@ -14,10 +14,10 @@ Objetivo: garantir que cada conta autenticada tenha seus próprios dados salvos 
 
 ## Fase 2 — Status de sincronização e proteção contra falhas
 
-- [ ] Adicionar indicador visual de status: salvando, salvo, erro, local/offline.
-- [ ] Exibir aviso claro quando uma alteração não sincronizar com Firestore.
-- [ ] Bloquear mensagens de sucesso quando a alteração ficar apenas local.
-- [ ] Revisar todos os fluxos que chamam `syncToFirestore`.
+- [x] Adicionar indicador visual de status: salvando, salvo, erro, local/offline.
+- [x] Exibir aviso claro quando uma alteração não sincronizar com Firestore.
+- [x] Bloquear mensagens de sucesso quando a alteração ficar apenas local.
+- [x] Revisar todos os fluxos que chamam `syncToFirestore`.
 
 ## Fase 3 — Backup local e exportação
 
