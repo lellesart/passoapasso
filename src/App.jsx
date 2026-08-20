@@ -1,6 +1,6 @@
 import React, { lazy, Suspense, useRef, useState, useEffect, useMemo, useCallback } from 'react';
 import { DragDropContext, Droppable, Draggable } from '@hello-pangea/dnd';
-import { auth, googleProvider, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, db, doc, setDoc, onSnapshot, updateDoc } from './firebase/config';
+import { auth, googleProvider, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged, db, doc, setDoc, getDoc, onSnapshot, serverTimestamp } from './firebase/config';
 import { addEventToGoogleCalendar, deleteEventFromGoogleCalendar } from './firebase/calendarAPI';
 import {
   CheckSquare,
@@ -35,7 +35,8 @@ import {
   Snowflake,
   MapPin,
   Loader2,
-  Pencil
+  Pencil,
+  LogOut
 } from 'lucide-react';
 
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
@@ -515,33 +516,97 @@ const getHabitTone = (color = '') => {
   return 'graphite';
 };
 
-// DADOS INICIAIS DE EXEMPLO
-const INITIAL_TASKS = [
-  { id: '1', title: 'Rever proposta de projeto e métricas', category: 'Trabalho', priority: 'Alta', status: 'em_curso', dueDate: '2026-07-30' },
-  { id: '2', title: 'Treino de corrida no parque (30 min)', category: 'Saúde', priority: 'Média', status: 'concluido', dueDate: '2026-07-30' },
-  { id: '3', title: 'Ler 2 capítulos de Hábitos Atômicos', category: 'Estudos', priority: 'Baixa', status: 'a_fazer', dueDate: '2026-07-30' },
-  { id: '4', title: 'Organizar despensa e compras semanais', category: 'Pessoal', priority: 'Média', status: 'a_fazer', dueDate: '2026-07-30' },
-  { id: '5', title: 'Enviar relatório semanal para a equipe', category: 'Trabalho', priority: 'Alta', status: 'a_fazer', dueDate: '2026-07-31' },
-  { id: '6', title: 'Consulta de avaliação física', category: 'Saúde', priority: 'Média', status: 'a_fazer', dueDate: '2026-08-01' }
-];
+const ORGANIZER_SCHEMA_VERSION = 2;
 
-const INITIAL_HABITS = [
-  { id: 'h_treino', name: 'Treino', color: 'habit-color-blue', iconColor: 'text-[#376FCF]', recurrence: 'Todos os dias', iconName: 'Dumbbell' },
-  { id: 'h_dieta', name: 'Dieta', color: 'habit-color-olive', iconColor: 'text-[#5E6F3B]', recurrence: 'Seg, Qui', iconName: 'Apple' },
-  { id: 'h_cardio', name: 'Cardio', color: 'habit-color-purple', iconColor: 'text-[#7543C6]', recurrence: 'Todos os dias', iconName: 'Activity' },
-  { id: 'h_estudo', name: 'Estudo', color: 'habit-color-green', iconColor: 'text-[#087F5B]', recurrence: 'Todos os dias', iconName: 'GraduationCap' }
-];
+const createEmptyOrganizerData = () => ({
+  tasks: [],
+  habits: [],
+  notes: [],
+  events: [],
+  dailyHabitsState: {
+    lastDate: organizerDateKey(),
+    completed: {}
+  },
+  aiActionAudit: [],
+});
 
-const INITIAL_NOTES = [
-  { id: 'n1', title: 'Ideias de Layout', content: 'Design minimalista com tipografia em negrito, cards pastéis sem bordas e sombras flutuantes.', category: 'Trabalho' },
-  { id: 'n2', title: 'Lista de Compras da Semana', content: '• Frutas da época\n• Granola sem açúcar\n• Café em grão', category: 'Pessoal' }
-];
+const createOrganizerMetadata = (currentUser, { includeCreatedAt = false } = {}) => ({
+  ownerUid: currentUser.uid,
+  ownerEmail: currentUser.email || null,
+  schemaVersion: ORGANIZER_SCHEMA_VERSION,
+  updatedAt: serverTimestamp(),
+  ...(includeCreatedAt ? { createdAt: serverTimestamp() } : {}),
+});
 
-const INITIAL_EVENTS = [
-  { id: 'e1', title: 'Reunião de alinhamento da equipe', date: '2026-07-30', time: '14:30', category: 'Trabalho', whatsappAlert: true, reminderMinutes: 15 },
-  { id: 'e2', title: 'Consulta Médica de Rotina', date: '2026-07-30', time: '17:00', category: 'Saúde', whatsappAlert: true, reminderMinutes: 30 },
-  { id: 'e3', title: 'Workshop Online: React & Tailwind', date: '2026-07-31', time: '10:00', category: 'Estudos', whatsappAlert: true, reminderMinutes: 60 }
-];
+const createEmptyUserDocument = (currentUser) => ({
+  ...createEmptyOrganizerData(),
+  ...createOrganizerMetadata(currentUser, { includeCreatedAt: true }),
+});
+
+const normalizeStoredHabits = (habits = []) => habits.map(habit => (
+  habit.id === 'h_dieta' && (
+    String(habit.color || '').includes('FF9B6A')
+    || String(habit.color || '').includes('amber')
+  )
+    ? {
+        ...habit,
+        color: 'habit-color-olive',
+        iconColor: 'text-[#5E6F3B]',
+      }
+    : habit
+));
+
+const normalizeDemoId = (value = '') => String(value).trim();
+
+const DEMO_TASK_IDS = new Set(['1', '2', '3', '4', '5', '6']);
+const DEMO_NOTE_IDS = new Set(['n1', 'n2']);
+const DEMO_EVENT_IDS = new Set(['e1', 'e2', 'e3']);
+const DEMO_HABIT_IDS = new Set(['h_treino', 'h_dieta', 'h_cardio', 'h_estudo']);
+
+const removeDemoItems = (items, demoIds) => (
+  Array.isArray(items)
+    ? items.filter(item => !demoIds.has(normalizeDemoId(item?.id)))
+    : []
+);
+
+const normalizeOrganizerData = (data = {}) => ({
+  tasks: removeDemoItems(data.tasks, DEMO_TASK_IDS),
+  notes: removeDemoItems(data.notes, DEMO_NOTE_IDS),
+  events: removeDemoItems(data.events, DEMO_EVENT_IDS),
+  habits: normalizeStoredHabits(removeDemoItems(data.habits, DEMO_HABIT_IDS)),
+  dailyHabitsState: data.dailyHabitsState || {
+    lastDate: organizerDateKey(),
+    completed: {}
+  },
+  aiActionAudit: Array.isArray(data.aiActionAudit) ? data.aiActionAudit : [],
+});
+
+const summarizeOrganizerDocument = (currentUser, snapshot) => {
+  const data = snapshot.exists() ? snapshot.data() : {};
+  const visibleData = normalizeOrganizerData(data);
+
+  return {
+    id: currentUser.uid,
+    caminho: `users/${currentUser.uid}`,
+    tipo: 'principal_uid',
+    existe: snapshot.exists(),
+    ownerUid: data.ownerUid || null,
+    ownerEmail: data.ownerEmail || null,
+    schemaVersion: data.schemaVersion || null,
+    brutos: {
+      tarefas: Array.isArray(data.tasks) ? data.tasks.length : 0,
+      habitos: Array.isArray(data.habits) ? data.habits.length : 0,
+      notas: Array.isArray(data.notes) ? data.notes.length : 0,
+      eventos: Array.isArray(data.events) ? data.events.length : 0,
+    },
+    visiveis_sem_demo: {
+      tarefas: visibleData.tasks.length,
+      habitos: visibleData.habits.length,
+      notas: visibleData.notes.length,
+      eventos: visibleData.events.length,
+    },
+  };
+};
 
 const DAYS_OF_WEEK = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 const MONTH_NAMES = [
@@ -728,44 +793,81 @@ export default function App() {
 
   useEffect(() => {
     let unsubscribeDb = null;
+    let authRunId = 0;
     const unsubscribeAuth = onAuthStateChanged(auth, async (currentUser) => {
+      const runId = authRunId + 1;
+      authRunId = runId;
+
+      if (unsubscribeDb) {
+        unsubscribeDb();
+        unsubscribeDb = null;
+      }
+
       setUser(currentUser);
-      setIsAuthLoading(false);
       
       if (currentUser) {
+        setIsAuthLoading(true);
+        const emptyData = createEmptyOrganizerData();
+        setTasks(emptyData.tasks);
+        setHabits(emptyData.habits);
+        setNotes(emptyData.notes);
+        setEvents(emptyData.events);
+        setDailyHabitsState(emptyData.dailyHabitsState);
+        aiActionAuditRef.current = emptyData.aiActionAudit;
+        setAIActionAudit(emptyData.aiActionAudit);
+
         const userRef = doc(db, 'users', currentUser.uid);
+
+        try {
+          const userSnapshot = await getDoc(userRef);
+
+          if (runId !== authRunId) return;
+
+          if (!userSnapshot.exists()) {
+            await setDoc(userRef, createEmptyUserDocument(currentUser));
+          } else {
+            const userData = userSnapshot.data();
+            if (
+              userData.ownerUid !== currentUser.uid
+              || userData.ownerEmail !== (currentUser.email || null)
+              || userData.schemaVersion !== ORGANIZER_SCHEMA_VERSION
+            ) {
+              await setDoc(userRef, createOrganizerMetadata(currentUser), { merge: true });
+            }
+          }
+        } catch (error) {
+          if (runId !== authRunId) return;
+          console.error('Erro ao preparar documento do usuário:', error);
+          toast.error('Não foi possível preparar seus dados. Tente sair e entrar novamente.');
+          setIsAuthLoading(false);
+          return;
+        }
+
+        if (runId !== authRunId) return;
+
         unsubscribeDb = onSnapshot(userRef, (docSnap) => {
+          if (runId !== authRunId) return;
           if (docSnap.exists()) {
-            const data = docSnap.data();
-            if (data.tasks) setTasks(data.tasks);
-            if (data.habits) {
-              const normalizedHabits = data.habits.map(habit => (
-                habit.id === 'h_dieta' && (
-                  String(habit.color || '').includes('FF9B6A')
-                  || String(habit.color || '').includes('amber')
-                )
-                  ? {
-                      ...habit,
-                      color: 'habit-color-olive',
-                      iconColor: 'text-[#5E6F3B]',
-                    }
-                  : habit
-              ));
-              setHabits(normalizedHabits);
-            }
-            if (data.notes) setNotes(data.notes);
-            if (data.events) setEvents(data.events);
-            if (data.aiActionAudit) {
-              aiActionAuditRef.current = data.aiActionAudit;
-              setAIActionAudit(data.aiActionAudit);
-            }
+            const rawData = docSnap.data();
+            const data = normalizeOrganizerData(rawData);
+
+            setTasks(data.tasks);
+            setHabits(data.habits);
+            setNotes(data.notes);
+            setEvents(data.events);
+            aiActionAuditRef.current = data.aiActionAudit;
+            setAIActionAudit(data.aiActionAudit);
+
             if (data.dailyHabitsState) {
               const today = organizerDateKey();
               const stateDate = data.dailyHabitsState.lastDate || data.dailyHabitsState.currentDate;
               if (stateDate !== today) {
                 const resetState = { lastDate: today, completed: {} };
                 setDailyHabitsState(resetState);
-                updateDoc(userRef, { dailyHabitsState: resetState }).catch(console.error);
+                setDoc(userRef, {
+                  dailyHabitsState: resetState,
+                  ...createOrganizerMetadata(currentUser),
+                }, { merge: true }).catch(console.error);
               } else {
                 setDailyHabitsState({
                   lastDate: today,
@@ -773,28 +875,42 @@ export default function App() {
                 });
               }
             }
+            setIsAuthLoading(false);
           } else {
-            // Document doesn't exist, create it with initial data
-            const initialData = {
-              tasks: INITIAL_TASKS,
-              habits: INITIAL_HABITS,
-              notes: INITIAL_NOTES,
-              events: INITIAL_EVENTS,
-              dailyHabitsState: {
-                lastDate: organizerDateKey(),
-                completed: {}
-              },
-              aiActionAudit: [],
-            };
-            setDoc(userRef, initialData);
+            const initialData = createEmptyOrganizerData();
+            setTasks(initialData.tasks);
+            setHabits(initialData.habits);
+            setNotes(initialData.notes);
+            setEvents(initialData.events);
+            setDailyHabitsState(initialData.dailyHabitsState);
+            aiActionAuditRef.current = initialData.aiActionAudit;
+            setAIActionAudit(initialData.aiActionAudit);
+            setDoc(userRef, createEmptyUserDocument(currentUser)).catch(console.error);
+            setIsAuthLoading(false);
           }
+        }, (error) => {
+          if (runId !== authRunId) return;
+          console.error('Erro ao carregar dados do usuário:', error);
+          toast.error('Não foi possível carregar seus dados. Tente sair e entrar novamente.');
+          setIsAuthLoading(false);
         });
       } else {
         if (unsubscribeDb) unsubscribeDb();
+        const emptyData = createEmptyOrganizerData();
+        setTasks(emptyData.tasks);
+        setHabits(emptyData.habits);
+        setNotes(emptyData.notes);
+        setEvents(emptyData.events);
+        setDailyHabitsState(emptyData.dailyHabitsState);
+        aiActionAuditRef.current = emptyData.aiActionAudit;
+        setAIActionAudit(emptyData.aiActionAudit);
+        setGoogleAccessToken(null);
+        setIsAuthLoading(false);
       }
     });
     
     return () => {
+      authRunId += 1;
       unsubscribeAuth();
       if (unsubscribeDb) unsubscribeDb();
     };
@@ -817,16 +933,30 @@ export default function App() {
   const handleLogout = async () => {
     try {
       setGoogleAccessToken(null);
+      setMobileMenuOpen(false);
+      const emptyData = createEmptyOrganizerData();
+      setTasks(emptyData.tasks);
+      setHabits(emptyData.habits);
+      setNotes(emptyData.notes);
+      setEvents(emptyData.events);
+      setDailyHabitsState(emptyData.dailyHabitsState);
+      aiActionAuditRef.current = emptyData.aiActionAudit;
+      setAIActionAudit(emptyData.aiActionAudit);
       await signOut(auth);
+      toast.success("Você saiu da conta.");
     } catch (error) {
       console.error("Erro ao sair:", error);
+      toast.error("Erro ao sair da conta. Tente novamente.");
     }
   };
 
   const syncToFirestore = useCallback(async (field, data) => {
     if (!user) return { ok: false, error: 'Usuário não autenticado.' };
     try {
-      await updateDoc(doc(db, 'users', user.uid), { [field]: data });
+      await setDoc(doc(db, 'users', user.uid), {
+        [field]: data,
+        ...createOrganizerMetadata(user),
+      }, { merge: true });
       return { ok: true };
     } catch (e) {
       console.error(`Erro ao sincronizar ${field}:`, e);
@@ -835,10 +965,10 @@ export default function App() {
   }, [user]);
 
   // ESTADOS PRINCIPAIS
-  const [tasks, setTasks] = useState(INITIAL_TASKS);
-  const [habits, setHabits] = useState(INITIAL_HABITS);
-  const [notes, setNotes] = useState(INITIAL_NOTES);
-  const [events, setEvents] = useState(INITIAL_EVENTS);
+  const [tasks, setTasks] = useState([]);
+  const [habits, setHabits] = useState([]);
+  const [notes, setNotes] = useState([]);
+  const [events, setEvents] = useState([]);
   const [, setAIActionAudit] = useState([]);
   const aiActionAuditRef = useRef([]);
   const aiUndoActionsRef = useRef(new Map());
@@ -1088,6 +1218,46 @@ export default function App() {
     .map(part => part.charAt(0).toUpperCase())
     .join('');
 
+  const handleCopyDataDiagnostics = async () => {
+    if (!user) {
+      toast.info('Entre na conta para gerar o diagnóstico.');
+      return;
+    }
+
+    try {
+      toast.loading('Gerando diagnóstico de dados...', { id: 'data-diagnostics' });
+      const userRef = doc(db, 'users', user.uid);
+      const snapshot = await getDoc(userRef);
+      const nextDiagnostics = {
+        usuario: user.email || user.uid,
+        uid: user.uid,
+        documento_ativo: `users/${user.uid}`,
+        documento: summarizeOrganizerDocument(user, snapshot),
+        estado_visivel_no_app: {
+          tarefas: tasks.length,
+          habitos: habits.length,
+          notas: notes.length,
+          eventos: events.length,
+          habitos_marcados_hoje: Object.values(dailyHabitsState?.completed || {}).filter(Boolean).length,
+        },
+        atualizadoEm: new Date().toISOString(),
+      };
+      const report = JSON.stringify(nextDiagnostics, null, 2);
+      try {
+        await navigator.clipboard.writeText(report);
+        toast.success('Diagnóstico de dados copiado.', { id: 'data-diagnostics' });
+      } catch (clipboardError) {
+        console.info('Diagnóstico de dados:', nextDiagnostics);
+        console.error('Erro ao copiar diagnóstico:', clipboardError);
+        window.prompt('Copie o diagnóstico abaixo:', report);
+        toast.info('Diagnóstico gerado. Copie pela janela aberta ou pelo console.', { id: 'data-diagnostics' });
+      }
+    } catch (error) {
+      console.error('Erro ao gerar diagnóstico:', error);
+      toast.error('Não consegui gerar o diagnóstico. Veja o console do navegador.', { id: 'data-diagnostics' });
+    }
+  };
+
   if (isAuthLoading) {
     return (
       <div className="login-loading-screen" role="status" aria-label="Carregando Organizador">
@@ -1313,6 +1483,22 @@ export default function App() {
                     <small>{user ? user.email : 'Faça login'}</small>
                   </div>
                 </div>
+                <button
+                  type="button"
+                  onClick={handleLogout}
+                  className="menu-logout-button"
+                >
+                  <LogOut className="w-4 h-4" />
+                  <span>Sair da conta</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={handleCopyDataDiagnostics}
+                  className="menu-diagnostics-button"
+                >
+                  <FileText className="w-4 h-4" />
+                  <span>Copiar diagnóstico</span>
+                </button>
               </footer>
             </motion.div>
           </>
