@@ -13,7 +13,6 @@ import {
   X
 } from 'lucide-react';
 import {
-  addDoc,
   collection,
   db,
   doc,
@@ -21,7 +20,7 @@ import {
   orderBy,
   query,
   serverTimestamp,
-  setDoc,
+  writeBatch,
   where
 } from '../firebase/config';
 
@@ -194,6 +193,7 @@ export function AISetupView({ onBack }) {
 export function ChatView({ currentUser }) {
   const [recipientEmail, setRecipientEmail] = useState('');
   const [activeChatId, setActiveChatId] = useState(null);
+  const [activeParticipants, setActiveParticipants] = useState([]);
   const [messages, setMessages] = useState([]);
   const [newMessage, setNewMessage] = useState('');
   const [chatsList, setChatsList] = useState([]);
@@ -202,9 +202,10 @@ export function ChatView({ currentUser }) {
 
   useEffect(() => {
     if (!currentUser?.email) return undefined;
+    const currentUserEmail = currentUser.email.toLowerCase().trim();
     const chatsQuery = query(
       collection(db, 'chats'),
-      where('participants', 'array-contains', currentUser.email),
+      where('participants', 'array-contains', currentUserEmail),
       orderBy('updatedAt', 'desc')
     );
 
@@ -219,6 +220,7 @@ export function ChatView({ currentUser }) {
 
     const emails = [currentUser.email.toLowerCase().trim(), recipientEmail.toLowerCase().trim()].sort();
     setActiveChatId(emails.join('_'));
+    setActiveParticipants(emails);
     setRecipientEmail('');
     setIsStartingNew(false);
   };
@@ -239,23 +241,26 @@ export function ChatView({ currentUser }) {
 
   const sendMessage = async (event) => {
     event.preventDefault();
-    if (!newMessage.trim() || !activeChatId) return;
+    if (!newMessage.trim() || !activeChatId || activeParticipants.length !== 2) return;
 
     const messagesRef = collection(db, 'chats', activeChatId, 'messages');
     const chatDocRef = doc(db, 'chats', activeChatId);
+    const messageDocRef = doc(messagesRef);
+    const senderEmail = currentUser.email.toLowerCase().trim();
 
     try {
-      await addDoc(messagesRef, {
-        text: newMessage,
-        sender: currentUser.email,
-        createdAt: serverTimestamp()
-      });
-
-      await setDoc(chatDocRef, {
-        participants: activeChatId.split('_'),
-        lastMessage: newMessage,
+      const batch = writeBatch(db);
+      batch.set(chatDocRef, {
+        participants: activeParticipants,
+        lastMessage: newMessage.trim(),
         updatedAt: serverTimestamp()
       }, { merge: true });
+      batch.set(messageDocRef, {
+        text: newMessage.trim(),
+        sender: senderEmail,
+        createdAt: serverTimestamp()
+      });
+      await batch.commit();
 
       setNewMessage('');
     } catch (error) {
@@ -265,7 +270,11 @@ export function ChatView({ currentUser }) {
 
   const getRecipientFromChatId = (chatId) => {
     if (!chatId || !currentUser?.email) return '';
-    return chatId.split('_').find(email => email !== currentUser.email) || currentUser.email;
+    const currentUserEmail = currentUser.email.toLowerCase().trim();
+    const participants = activeParticipants.length > 0
+      ? activeParticipants
+      : chatsList.find(chat => chat.id === chatId)?.participants || [];
+    return participants.find(email => email !== currentUserEmail) || currentUserEmail;
   };
 
   return (
@@ -312,12 +321,19 @@ export function ChatView({ currentUser }) {
                 </button>
               </div>
             ) : (
-              <ul className="messages-list">
-                {chatsList.map((chat) => {
-                  const partnerEmail = chat.participants.find(email => email !== currentUser.email) || currentUser.email;
+                <ul className="messages-list">
+                  {chatsList.map((chat) => {
+                  const currentUserEmail = currentUser.email.toLowerCase().trim();
+                  const partnerEmail = chat.participants.find(email => email !== currentUserEmail) || currentUserEmail;
                   return (
                     <li key={chat.id}>
-                      <button onClick={() => setActiveChatId(chat.id)} className="messages-thread-button">
+                      <button
+                        onClick={() => {
+                          setActiveChatId(chat.id);
+                          setActiveParticipants(chat.participants || []);
+                        }}
+                        className="messages-thread-button"
+                      >
                         <div className="messages-thread-avatar">{partnerEmail.charAt(0)}</div>
                         <div className="messages-thread-copy">
                           <p>{partnerEmail}</p>
@@ -337,7 +353,7 @@ export function ChatView({ currentUser }) {
           <div className="messages-chat-header">
             <div className="messages-chat-person">
               <button
-                onClick={() => { setActiveChatId(null); setMessages([]); }}
+                onClick={() => { setActiveChatId(null); setActiveParticipants([]); setMessages([]); }}
                 className="messages-icon-button"
                 aria-label="Voltar para conversas"
               >

@@ -36,7 +36,9 @@ import {
   MapPin,
   Loader2,
   Pencil,
-  LogOut
+  LogOut,
+  Download,
+  Upload
 } from 'lucide-react';
 
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
@@ -45,6 +47,13 @@ import { applyConfirmedOrganizerAction, applyOrganizerUndo } from './services/ai
 import { syncCalendarActionWithGoogle } from './services/ai/calendarActionSync';
 import { frequencyFromHabit, organizerDateKey, toggleDailyHabitCompletion } from './services/ai/habitModel';
 import { appendAuditEntry, createAuditEntry } from './services/ai/actionAudit';
+import {
+  createOrganizerBackupFilename,
+  createOrganizerBackupPayload,
+  parseOrganizerBackupText,
+  saveCurrentOrganizerBackup,
+  saveOrganizerBackupPair,
+} from './services/organizerBackup';
 
 const loadSecondaryViews = () => import('./components/SecondaryViews');
 const GoogleCalendarSyncView = lazy(() => loadSecondaryViews().then(module => ({ default: module.GoogleCalendarSyncView })));
@@ -581,33 +590,6 @@ const normalizeOrganizerData = (data = {}) => ({
   aiActionAudit: Array.isArray(data.aiActionAudit) ? data.aiActionAudit : [],
 });
 
-const summarizeOrganizerDocument = (currentUser, snapshot) => {
-  const data = snapshot.exists() ? snapshot.data() : {};
-  const visibleData = normalizeOrganizerData(data);
-
-  return {
-    id: currentUser.uid,
-    caminho: `users/${currentUser.uid}`,
-    tipo: 'principal_uid',
-    existe: snapshot.exists(),
-    ownerUid: data.ownerUid || null,
-    ownerEmail: data.ownerEmail || null,
-    schemaVersion: data.schemaVersion || null,
-    brutos: {
-      tarefas: Array.isArray(data.tasks) ? data.tasks.length : 0,
-      habitos: Array.isArray(data.habits) ? data.habits.length : 0,
-      notas: Array.isArray(data.notes) ? data.notes.length : 0,
-      eventos: Array.isArray(data.events) ? data.events.length : 0,
-    },
-    visiveis_sem_demo: {
-      tarefas: visibleData.tasks.length,
-      habitos: visibleData.habits.length,
-      notas: visibleData.notes.length,
-      eventos: visibleData.events.length,
-    },
-  };
-};
-
 const SYNC_FIELD_LABELS = {
   tasks: 'tarefas',
   habits: 'hábitos',
@@ -1061,6 +1043,8 @@ export default function App() {
   const [isAuthLoading, setIsAuthLoading] = useState(true);
   const [googleAccessToken, setGoogleAccessToken] = useState(null);
   const [syncStatus, setSyncStatus] = useState(createInitialSyncStatus);
+  const organizerStateRef = useRef(createEmptyOrganizerData());
+  const backupImportInputRef = useRef(null);
 
   useEffect(() => {
     if (syncStatus.state !== 'saved') return undefined;
@@ -1126,6 +1110,7 @@ export default function App() {
           updatedAt: null,
         });
         const emptyData = createEmptyOrganizerData();
+        organizerStateRef.current = emptyData;
         setTasks(emptyData.tasks);
         setHabits(emptyData.habits);
         setNotes(emptyData.notes);
@@ -1174,6 +1159,18 @@ export default function App() {
           if (docSnap.exists()) {
             const rawData = docSnap.data();
             const data = normalizeOrganizerData(rawData);
+            organizerStateRef.current = data;
+
+            try {
+              saveCurrentOrganizerBackup({
+                storage: window.localStorage,
+                user: currentUser,
+                data,
+                reason: 'firestore-snapshot',
+              });
+            } catch (backupError) {
+              console.warn('Não foi possível atualizar o backup local:', backupError);
+            }
 
             setTasks(data.tasks);
             setHabits(data.habits);
@@ -1208,6 +1205,7 @@ export default function App() {
             setIsAuthLoading(false);
           } else {
             const initialData = createEmptyOrganizerData();
+            organizerStateRef.current = initialData;
             setTasks(initialData.tasks);
             setHabits(initialData.habits);
             setNotes(initialData.notes);
@@ -1239,6 +1237,7 @@ export default function App() {
       } else {
         if (unsubscribeDb) unsubscribeDb();
         const emptyData = createEmptyOrganizerData();
+        organizerStateRef.current = emptyData;
         setTasks(emptyData.tasks);
         setHabits(emptyData.habits);
         setNotes(emptyData.notes);
@@ -1278,6 +1277,7 @@ export default function App() {
       setGoogleAccessToken(null);
       setMobileMenuOpen(false);
       const emptyData = createEmptyOrganizerData();
+      organizerStateRef.current = emptyData;
       setTasks(emptyData.tasks);
       setHabits(emptyData.habits);
       setNotes(emptyData.notes);
@@ -1296,20 +1296,6 @@ export default function App() {
 
   const syncToFirestore = useCallback(async (field, data) => {
     const fieldLabel = SYNC_FIELD_LABELS[field] || 'dados';
-    if (typeof navigator !== 'undefined' && !navigator.onLine) {
-      const message = 'Sem conexão com a internet.';
-      setSyncStatus({
-        state: 'offline',
-        label: 'Modo local',
-        detail: `Não foi possível salvar ${fieldLabel}.`,
-        updatedAt: new Date().toISOString(),
-      });
-      toast.error('Alteração feita apenas localmente.', {
-        description: 'Conecte-se à internet e tente novamente antes de fechar o app.',
-      });
-      return { ok: false, error: message };
-    }
-
     if (!user) {
       const message = 'Usuário não autenticado.';
       setSyncStatus({
@@ -1320,6 +1306,39 @@ export default function App() {
       });
       toast.error('Alteração não sincronizada.', {
         description: message,
+      });
+      return { ok: false, error: message };
+    }
+
+    const previousSnapshot = normalizeOrganizerData(organizerStateRef.current);
+    const nextSnapshot = normalizeOrganizerData({
+      ...previousSnapshot,
+      [field]: data,
+    });
+
+    try {
+      saveOrganizerBackupPair({
+        storage: window.localStorage,
+        user,
+        previousData: previousSnapshot,
+        currentData: nextSnapshot,
+        reason: `sync:${field}`,
+      });
+    } catch (backupError) {
+      console.warn(`Não foi possível criar o backup local de ${field}:`, backupError);
+    }
+    organizerStateRef.current = nextSnapshot;
+
+    if (typeof navigator !== 'undefined' && !navigator.onLine) {
+      const message = 'Sem conexão com a internet.';
+      setSyncStatus({
+        state: 'offline',
+        label: 'Modo local',
+        detail: `Não foi possível salvar ${fieldLabel}.`,
+        updatedAt: new Date().toISOString(),
+      });
+      toast.error('Alteração feita apenas localmente.', {
+        description: 'Um backup foi mantido neste dispositivo. Reconecte-se antes de fechar o app.',
       });
       return { ok: false, error: message };
     }
@@ -1572,6 +1591,17 @@ export default function App() {
     dailyHabitsStateRef.current = dailyHabitsState;
   }, [dailyHabitsState]);
 
+  useEffect(() => {
+    organizerStateRef.current = normalizeOrganizerData({
+      tasks,
+      habits,
+      notes,
+      events,
+      dailyHabitsState,
+      aiActionAudit: aiActionAuditRef.current,
+    });
+  }, [tasks, habits, notes, events, dailyHabitsState]);
+
   // Efeito para verificar se o dia mudou e zerar os hábitos
   useEffect(() => {
     const todayStr = organizerDateKey();
@@ -1614,43 +1644,117 @@ export default function App() {
     .map(part => part.charAt(0).toUpperCase())
     .join('');
 
-  const handleCopyDataDiagnostics = async () => {
+  const getCurrentOrganizerSnapshot = () => normalizeOrganizerData({
+    tasks,
+    habits,
+    notes,
+    events,
+    dailyHabitsState,
+    aiActionAudit: aiActionAuditRef.current,
+  });
+
+  const handleExportBackup = () => {
     if (!user) {
-      toast.info('Entre na conta para gerar o diagnóstico.');
+      toast.info('Entre na conta para exportar um backup.');
       return;
     }
 
     try {
-      toast.loading('Gerando diagnóstico de dados...', { id: 'data-diagnostics' });
-      const userRef = doc(db, 'users', user.uid);
-      const snapshot = await getDoc(userRef);
-      const nextDiagnostics = {
-        usuario: user.email || user.uid,
-        uid: user.uid,
-        documento_ativo: `users/${user.uid}`,
-        documento: summarizeOrganizerDocument(user, snapshot),
-        estado_visivel_no_app: {
-          tarefas: tasks.length,
-          habitos: habits.length,
-          notas: notes.length,
-          eventos: events.length,
-          habitos_marcados_hoje: Object.values(dailyHabitsState?.completed || {}).filter(Boolean).length,
-        },
-        atualizadoEm: new Date().toISOString(),
-      };
-      const report = JSON.stringify(nextDiagnostics, null, 2);
-      try {
-        await navigator.clipboard.writeText(report);
-        toast.success('Diagnóstico de dados copiado.', { id: 'data-diagnostics' });
-      } catch (clipboardError) {
-        console.info('Diagnóstico de dados:', nextDiagnostics);
-        console.error('Erro ao copiar diagnóstico:', clipboardError);
-        window.prompt('Copie o diagnóstico abaixo:', report);
-        toast.info('Diagnóstico gerado. Copie pela janela aberta ou pelo console.', { id: 'data-diagnostics' });
-      }
+      const data = getCurrentOrganizerSnapshot();
+      const payload = createOrganizerBackupPayload({
+        user,
+        data,
+        reason: 'manual-export',
+      });
+      saveCurrentOrganizerBackup({
+        storage: window.localStorage,
+        user,
+        data,
+        reason: 'manual-export',
+      });
+
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+      const downloadUrl = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      link.download = createOrganizerBackupFilename(user);
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.setTimeout(() => URL.revokeObjectURL(downloadUrl), 1000);
+      toast.success('Backup exportado com sucesso.');
     } catch (error) {
-      console.error('Erro ao gerar diagnóstico:', error);
-      toast.error('Não consegui gerar o diagnóstico. Veja o console do navegador.', { id: 'data-diagnostics' });
+      console.error('Erro ao exportar backup:', error);
+      toast.error('Não foi possível exportar o backup.', { description: error.message });
+    }
+  };
+
+  const handleImportBackup = async (event) => {
+    const file = event.target.files?.[0];
+    event.target.value = '';
+    if (!file || !user) return;
+
+    try {
+      if (file.size > 5 * 1024 * 1024) {
+        throw new Error('O arquivo excede o limite de 5 MB.');
+      }
+
+      const payload = parseOrganizerBackupText(await file.text());
+      const ownerMismatch = payload.owner.uid !== user.uid;
+      const sourceAccount = payload.owner.email || payload.owner.uid;
+      const activeAccount = user.email || user.uid;
+      const confirmationMessage = ownerMismatch
+        ? `Este backup pertence a ${sourceAccount}, mas a conta ativa é ${activeAccount}. Importar substituirá todos os dados desta conta. Deseja continuar?`
+        : 'Importar este backup substituirá todas as tarefas, hábitos, notas e eventos da conta atual. Deseja continuar?';
+
+      if (!window.confirm(confirmationMessage)) return;
+
+      const previousData = getCurrentOrganizerSnapshot();
+      const importedData = normalizeOrganizerData(payload.data);
+      setSyncStatus({
+        state: 'saving',
+        label: 'Restaurando backup',
+        detail: 'Validando e salvando os registros nesta conta.',
+        updatedAt: null,
+      });
+
+      await setDoc(doc(db, 'users', user.uid), {
+        ...importedData,
+        ...createOrganizerMetadata(user),
+      }, { merge: true });
+
+      saveOrganizerBackupPair({
+        storage: window.localStorage,
+        user,
+        previousData,
+        currentData: importedData,
+        reason: 'manual-import',
+      });
+      organizerStateRef.current = importedData;
+      aiActionAuditRef.current = importedData.aiActionAudit;
+      setTasks(importedData.tasks);
+      setHabits(importedData.habits);
+      setNotes(importedData.notes);
+      setEvents(importedData.events);
+      setDailyHabitsState(importedData.dailyHabitsState);
+      setAIActionAudit(importedData.aiActionAudit);
+      setSyncStatus({
+        state: 'saved',
+        label: 'Backup restaurado',
+        detail: 'Os registros foram salvos na conta ativa.',
+        updatedAt: new Date().toISOString(),
+      });
+      setMobileMenuOpen(false);
+      toast.success('Backup importado com sucesso.');
+    } catch (error) {
+      console.error('Erro ao importar backup:', error);
+      setSyncStatus({
+        state: 'error',
+        label: 'Falha ao importar',
+        detail: error.message,
+        updatedAt: new Date().toISOString(),
+      });
+      toast.error('Não foi possível importar o backup.', { description: error.message });
     }
   };
 
@@ -1914,6 +2018,32 @@ export default function App() {
                     <small>{user ? user.email : 'Faça login'}</small>
                   </div>
                 </div>
+                <div className="menu-backup-actions" aria-label="Backup dos dados">
+                  <button
+                    type="button"
+                    onClick={handleExportBackup}
+                    className="menu-backup-button"
+                  >
+                    <Download className="w-4 h-4" />
+                    <span>Exportar backup</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => backupImportInputRef.current?.click()}
+                    className="menu-backup-button"
+                  >
+                    <Upload className="w-4 h-4" />
+                    <span>Importar backup</span>
+                  </button>
+                  <input
+                    ref={backupImportInputRef}
+                    type="file"
+                    accept="application/json,.json"
+                    onChange={handleImportBackup}
+                    className="menu-backup-input"
+                    aria-label="Selecionar arquivo de backup"
+                  />
+                </div>
                 <button
                   type="button"
                   onClick={handleLogout}
@@ -1921,14 +2051,6 @@ export default function App() {
                 >
                   <LogOut className="w-4 h-4" />
                   <span>Sair da conta</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={handleCopyDataDiagnostics}
-                  className="menu-diagnostics-button"
-                >
-                  <FileText className="w-4 h-4" />
-                  <span>Copiar diagnóstico</span>
                 </button>
               </motion.footer>
             </motion.div>

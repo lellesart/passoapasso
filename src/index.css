@@ -978,6 +978,49 @@ h1, h2, h3, h4, h5, h6 {
 .menu-user-copy p { margin-top: 3px; color: #303936; font-size: 13px; font-weight: 600; }
 .menu-user-copy small { margin-top: 1px; color: #7f8884; font-size: 11px; }
 
+.menu-backup-actions {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 15px;
+  padding-top: 15px;
+  border-top: 1px solid var(--line);
+}
+
+.menu-backup-button {
+  min-height: 44px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 7px 9px;
+  color: #59635f;
+  background: #fffdf9;
+  border: 1px solid #d8d2c9;
+  border-radius: 2px;
+  font-family: "IBM Plex Mono", monospace;
+  font-size: 8px;
+  font-weight: 600;
+  letter-spacing: .08em;
+  line-height: 1.25;
+  text-transform: uppercase;
+  transition: color .18s, background .18s, border-color .18s;
+}
+
+.menu-backup-button:hover {
+  color: var(--teal);
+  background: rgba(231, 239, 235, .72);
+  border-color: #afbbb6;
+}
+
+.menu-backup-button:focus-visible {
+  outline: 2px solid rgba(7, 95, 99, .2);
+  outline-offset: 2px;
+}
+
+.menu-backup-button svg { flex: 0 0 auto; }
+.menu-backup-input { display: none; }
+
 .menu-logout-button {
   width: 100%;
   min-height: 42px;
@@ -1007,37 +1050,6 @@ h1, h2, h3, h4, h5, h6 {
 
 .menu-logout-button:focus-visible {
   outline: 2px solid rgba(123, 61, 61, .24);
-  outline-offset: 2px;
-}
-
-.menu-diagnostics-button {
-  width: 100%;
-  min-height: 38px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  gap: 8px;
-  margin-top: 9px;
-  color: #59635f;
-  background: transparent;
-  border: 1px solid rgba(184, 201, 194, .72);
-  border-radius: 2px;
-  font-family: "IBM Plex Mono", monospace;
-  font-size: 9px;
-  font-weight: 600;
-  letter-spacing: .12em;
-  text-transform: uppercase;
-  transition: color .18s, background .18s, border-color .18s;
-}
-
-.menu-diagnostics-button:hover {
-  color: var(--teal);
-  background: rgba(231, 239, 235, .72);
-  border-color: #afbbb6;
-}
-
-.menu-diagnostics-button:focus-visible {
-  outline: 2px solid rgba(7, 95, 99, .2);
   outline-offset: 2px;
 }
 

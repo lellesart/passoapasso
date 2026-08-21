@@ -150,6 +150,23 @@ VITE_ENABLE_LOCAL_AI=true
 
 No Firebase, habilite a autenticação com Google e configure o Firestore. Para sincronizar compromissos, habilite também a Google Calendar API e autorize o escopo de eventos utilizado pela aplicação.
 
+### Regras de segurança do Firestore
+
+O arquivo `firestore.rules` restringe cada documento `users/{uid}` ao próprio usuário autenticado. Conversas e mensagens podem ser acessadas apenas pelos participantes registrados, e novas mensagens precisam identificar o e-mail da conta autenticada como remetente.
+
+Revise o projeto selecionado e publique as regras separadamente do deploy do frontend:
+
+```bash
+npx firebase-tools deploy --only firestore:rules --project SEU_PROJECT_ID
+```
+
+Depois da publicação, valide com duas contas diferentes:
+
+1. Cada conta deve continuar lendo e alterando apenas seu próprio organizador.
+2. Uma conta não deve conseguir acessar `users/{uid}` da outra.
+3. Uma conversa deve aparecer somente para os dois participantes.
+4. Um participante deve conseguir enviar e ler mensagens; terceiros não devem conseguir abrir a conversa.
+
 ## Configuração do Ollama
 
 Instale o Ollama a partir de [ollama.com](https://ollama.com/) e baixe o modelo recomendado:

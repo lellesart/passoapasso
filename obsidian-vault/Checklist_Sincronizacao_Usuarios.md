@@ -21,25 +21,28 @@ Objetivo: garantir que cada conta autenticada tenha seus próprios dados salvos 
 
 ## Fase 3 — Backup local e exportação
 
-- [ ] Criar backup local por `uid` antes/depois de alterações relevantes.
-- [ ] Adicionar ação `Exportar backup`.
-- [ ] Adicionar ação `Importar backup`.
-- [ ] Validar o backup antes de restaurar dados.
-- [ ] Impedir importação acidental em conta diferente sem confirmação explícita.
+- [x] Criar backup local por `uid` antes/depois de alterações relevantes.
+- [x] Adicionar ação `Exportar backup`.
+- [x] Adicionar ação `Importar backup`.
+- [x] Validar o backup antes de restaurar dados.
+- [x] Impedir importação acidental em conta diferente sem confirmação explícita.
 
 ## Fase 4 — Regras do Firestore
 
-- [ ] Aplicar regra para `users/{uid}`: somente o próprio usuário lê e escreve.
-- [ ] Revisar permissões da coleção `chats`.
+- [x] Criar e versionar regras para `users/{uid}` e `chats`.
+- [x] Aplicar regra para `users/{uid}`: somente o próprio usuário lê e escreve.
+- [x] Revisar permissões da coleção `chats`.
 - [ ] Testar leitura/escrita com duas contas diferentes.
+
+Regras compiladas e publicadas no projeto `passo-a-passo-2023f` em 21 de agosto de 2026. Falta concluir o teste funcional pós-publicação com duas contas.
 
 ## Fase 5 — Limpeza, validação e deploy
 
-- [ ] Remover diagnóstico temporário ou converter em painel simples de status.
+- [x] Remover diagnóstico temporário ou converter em painel simples de status.
 - [x] Rodar `npm test`.
 - [x] Rodar `npm run lint`.
 - [x] Rodar `npm run build`.
-- [ ] Fazer commit.
-- [ ] Fazer push.
+- [x] Fazer commit.
+- [x] Fazer push.
 - [ ] Validar no Netlify.
 - [ ] Validar no PWA instalado.
