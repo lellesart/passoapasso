@@ -17,6 +17,9 @@ import { CalendarDays, Check, ChevronRight, LoaderCircle, MapPin, Pencil, Plus, 
 import './SharedActivitiesView.css';
 
 const normalizeEmail = (value) => String(value || '').trim().toLowerCase();
+const uniqueMemberEmails = (emails = []) => [...new Map(
+  emails.map((email) => [normalizeEmail(email), email])
+).values()];
 const newId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 const firebaseProjectId = import.meta.env.VITE_FIREBASE_PROJECT_ID || 'projeto não identificado';
 
@@ -24,7 +27,7 @@ const getFirestoreErrorMessage = (error, action) => {
   const code = error?.code || 'erro-desconhecido';
   console.error(`${action}:`, code, error?.message || error);
   if (code.includes('permission-denied')) {
-    return `O Firebase (${firebaseProjectId}) recusou o acesso. Confirme se as regras atualizadas foram publicadas neste projeto. (permission-denied)`;
+    return `O Firebase (${firebaseProjectId}) recusou ${action}. Confira as permissões deste projeto. (permission-denied)`;
   }
   if (code.includes('unauthenticated')) {
     return 'Sua sessão expirou. Entre novamente na sua conta. (unauthenticated)';
@@ -45,7 +48,8 @@ const formatDate = (value) => {
 };
 
 export function SharedActivitiesView({ currentUser }) {
-  const userEmail = normalizeEmail(currentUser?.email);
+  const userEmail = String(currentUser?.email || '').trim();
+  const normalizedUserEmail = normalizeEmail(userEmail);
   const [activities, setActivities] = useState([]);
   const [selectedId, setSelectedId] = useState('');
   const [items, setItems] = useState([]);
@@ -107,6 +111,10 @@ export function SharedActivitiesView({ currentUser }) {
     () => activities.find((activity) => activity.id === selectedId) || null,
     [activities, selectedId]
   );
+  const selectedMembers = useMemo(
+    () => uniqueMemberEmails(selectedActivity?.memberEmails || []),
+    [selectedActivity]
+  );
 
   const createActivity = async (event) => {
     event.preventDefault();
@@ -118,8 +126,8 @@ export function SharedActivitiesView({ currentUser }) {
         title: activityTitle.trim(),
         destination: destination.trim(),
         ownerUid: currentUser.uid,
-        memberEmails: [userEmail],
-        memberNames: { [userEmail]: currentUser.displayName || userEmail },
+        memberEmails: [...new Set([userEmail, normalizedUserEmail])],
+        memberNames: { [normalizedUserEmail]: currentUser.displayName || userEmail },
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       });
@@ -136,16 +144,17 @@ export function SharedActivitiesView({ currentUser }) {
 
   const inviteMember = async (event) => {
     event.preventDefault();
-    const email = normalizeEmail(inviteEmail);
-    if (!selectedActivity || !email || email === userEmail) return;
-    if (selectedActivity.memberEmails?.includes(email)) {
+    const email = String(inviteEmail || '').trim();
+    const normalizedEmail = normalizeEmail(email);
+    if (!selectedActivity || !email || normalizedEmail === normalizedUserEmail) return;
+    if (selectedActivity.memberEmails?.some((memberEmail) => normalizeEmail(memberEmail) === normalizedEmail)) {
       setLoadError('Essa pessoa já participa deste roteiro.');
       return;
     }
     setBusy(true);
     try {
       await updateDoc(doc(db, 'sharedActivities', selectedActivity.id), {
-        memberEmails: arrayUnion(email),
+        memberEmails: arrayUnion(email, normalizedEmail),
         updatedAt: serverTimestamp(),
       });
       setInviteEmail('');
@@ -280,14 +289,14 @@ export function SharedActivitiesView({ currentUser }) {
                   <h2 id="shared-activity-title">{selectedActivity.title}</h2>
                   {selectedActivity.destination && <p><MapPin size={15} />{selectedActivity.destination}</p>}
                 </div>
-                <span className="shared-member-count"><UsersRound size={15} />{selectedActivity.memberEmails?.length || 1} participantes</span>
+                <span className="shared-member-count"><UsersRound size={15} />{selectedMembers.length || 1} participantes</span>
               </header>
 
               <section className="shared-members" aria-label="Participantes">
                 <div className="shared-section-title"><h3>Participantes</h3><span>Convide quem vai planejar com você</span></div>
                 <div className="shared-member-chips">
-                  {(selectedActivity.memberEmails || []).map((email) => (
-                    <span className="shared-member-chip" key={email}><i>{(selectedActivity.memberNames?.[email] || email).charAt(0).toUpperCase()}</i>{selectedActivity.memberNames?.[email] || email}{email === userEmail ? ' · você' : ''}</span>
+                  {selectedMembers.map((email) => (
+                    <span className="shared-member-chip" key={normalizeEmail(email)}><i>{(selectedActivity.memberNames?.[normalizeEmail(email)] || email).charAt(0).toUpperCase()}</i>{selectedActivity.memberNames?.[normalizeEmail(email)] || email}{normalizeEmail(email) === normalizedUserEmail ? ' · você' : ''}</span>
                   ))}
                 </div>
                 <form className="shared-invite-form" onSubmit={inviteMember}>

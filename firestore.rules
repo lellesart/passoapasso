@@ -18,7 +18,7 @@ service cloud.firestore {
       function isMember(data) {
         return hasAuthenticatedEmail()
           && data.memberEmails is list
-          && data.memberEmails.hasAny([request.auth.token.email.lower()]);
+          && request.auth.token.email in data.memberEmails;
       }
 
       function validActivity(data) {
@@ -34,7 +34,7 @@ service cloud.firestore {
           && data.ownerUid is string
           && data.memberEmails is list
           && data.memberEmails.size() > 0
-          && data.memberEmails.size() <= 20
+          && data.memberEmails.size() <= 40
           && data.memberNames is map
           && data.updatedAt == request.time;
       }
@@ -42,7 +42,7 @@ service cloud.firestore {
       allow read: if isMember(resource.data);
       allow create: if hasAuthenticatedEmail()
         && request.resource.data.ownerUid == request.auth.uid
-        && request.resource.data.memberEmails.hasAny([request.auth.token.email.lower()])
+        && request.auth.token.email in request.resource.data.memberEmails
         && request.resource.data.createdAt == request.time
         && validActivity(request.resource.data);
       allow update: if isMember(resource.data)
@@ -82,7 +82,7 @@ service cloud.firestore {
 
         allow read: if canAccessParent();
         allow create: if canAccessParent()
-          && request.resource.data.createdBy == request.auth.token.email.lower()
+          && request.resource.data.createdBy == request.auth.token.email
           && request.resource.data.createdAt == request.time
           && request.resource.data.updatedAt == request.time
           && validItem(request.resource.data);
@@ -91,7 +91,7 @@ service cloud.firestore {
           && request.resource.data.createdBy == resource.data.createdBy
           && request.resource.data.createdAt == resource.data.createdAt
           && request.resource.data.updatedAt == request.time
-          && request.resource.data.updatedBy == request.auth.token.email.lower()
+          && request.resource.data.updatedBy == request.auth.token.email
           && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
             'title', 'date', 'time', 'location', 'notes', 'updatedAt', 'updatedBy'
           ]);
