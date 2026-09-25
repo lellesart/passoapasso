@@ -39,7 +39,10 @@ service cloud.firestore {
           && data.updatedAt == request.time;
       }
 
-      allow read: if isMember(resource.data);
+      allow get: if isMember(resource.data);
+      allow list: if hasAuthenticatedEmail()
+        && resource.data.memberEmails is list
+        && resource.data.memberEmails.hasAny([request.auth.token.email]);
       allow create: if hasAuthenticatedEmail()
         && request.resource.data.ownerUid == request.auth.uid
         && request.auth.token.email in request.resource.data.memberEmails
