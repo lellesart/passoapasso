@@ -12,6 +12,7 @@ import {
   updateDoc,
   where,
   arrayUnion,
+  writeBatch,
 } from '../firebase/config';
 import { CalendarDays, Check, ChevronRight, LoaderCircle, MapPin, Pencil, Plus, Trash2, UsersRound, X } from 'lucide-react';
 import './SharedActivitiesView.css';
@@ -20,6 +21,7 @@ const normalizeEmail = (value) => String(value || '').trim().toLowerCase();
 const uniqueMemberEmails = (emails = []) => [...new Map(
   emails.map((email) => [normalizeEmail(email), email])
 ).values()];
+const membershipDocumentId = (activityId, email) => `${activityId}__${encodeURIComponent(email)}`;
 const newId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
 const firebaseProjectId = import.meta.env.VITE_FIREBASE_PROJECT_ID || 'projeto não identificado';
 
@@ -70,25 +72,129 @@ export function SharedActivitiesView({ currentUser }) {
   const [editValues, setEditValues] = useState(null);
 
   useEffect(() => {
-    if (!userEmail) return undefined;
-    const activitiesQuery = query(
-      collection(db, 'sharedActivities'),
-      where('memberEmails', 'array-contains', userEmail),
-    );
-    return onSnapshot(activitiesQuery, (snapshot) => {
-      const nextActivities = snapshot.docs.map((activityDoc) => ({ id: activityDoc.id, ...activityDoc.data() }))
+    if (!userEmail || !currentUser?.uid) {
+      setLoading(false);
+      return undefined;
+    }
+
+    setLoading(true);
+    setLoadError('');
+    const routeData = new Map();
+    const routeSubscriptions = new Map();
+    const indexedOwnedRoutes = new Set();
+    let memberActivityIds = new Set();
+    let ownedActivityIds = new Set();
+    let resolvedInitialQueries = 0;
+
+    const publishActivities = () => {
+      const nextActivities = [...routeData.values()]
         .sort((a, b) => (b.updatedAt?.seconds || 0) - (a.updatedAt?.seconds || 0));
       setActivities(nextActivities);
       setSelectedId((currentId) => (
         nextActivities.some((activity) => activity.id === currentId) ? currentId : nextActivities[0]?.id || ''
       ));
-      setLoading(false);
+    };
+
+    const indexOwnedRouteMembers = (activity) => {
+      if (indexedOwnedRoutes.has(activity.id) || !Array.isArray(activity.memberEmails)) return;
+      indexedOwnedRoutes.add(activity.id);
+      const emails = [...new Set(activity.memberEmails.map((email) => String(email || '').trim()).filter(Boolean))];
+      if (emails.length === 0) return;
+
+      const indexMembers = async () => {
+        for (let index = 0; index < emails.length; index += 10) {
+          const batch = writeBatch(db);
+          emails.slice(index, index + 10).forEach((email) => {
+            batch.set(doc(db, 'sharedActivityMemberships', membershipDocumentId(activity.id, email)), {
+              activityId: activity.id,
+              memberEmail: email,
+            });
+          });
+          await batch.commit();
+        }
+      };
+      indexMembers().catch((error) => {
+        console.error('indexar participantes do roteiro:', error?.code || error?.message || error);
+      });
+    };
+
+    const syncRouteSubscriptions = () => {
+      const requestedIds = new Set([...memberActivityIds, ...ownedActivityIds]);
+      routeSubscriptions.forEach((unsubscribe, activityId) => {
+        if (!requestedIds.has(activityId)) {
+          unsubscribe();
+          routeSubscriptions.delete(activityId);
+          routeData.delete(activityId);
+        }
+      });
+
+      requestedIds.forEach((activityId) => {
+        if (routeSubscriptions.has(activityId)) return;
+        const unsubscribe = onSnapshot(doc(db, 'sharedActivities', activityId), (activitySnapshot) => {
+          if (!activitySnapshot.exists()) {
+            routeData.delete(activityId);
+            publishActivities();
+            return;
+          }
+
+          const activity = { id: activitySnapshot.id, ...activitySnapshot.data() };
+          const isOwner = activity.ownerUid === currentUser.uid;
+          const isMember = activity.memberEmails?.includes(userEmail);
+          if (!isOwner && !isMember) {
+            routeData.delete(activityId);
+            publishActivities();
+            return;
+          }
+
+          routeData.set(activityId, activity);
+          publishActivities();
+          if (isOwner) indexOwnedRouteMembers(activity);
+        }, (error) => {
+          setLoadError(getFirestoreErrorMessage(error, 'abrir o roteiro'));
+        });
+        routeSubscriptions.set(activityId, unsubscribe);
+      });
+    };
+
+    const resolveInitialQuery = () => {
+      resolvedInitialQueries += 1;
+      if (resolvedInitialQueries >= 2) setLoading(false);
+    };
+
+    const membershipsQuery = query(
+      collection(db, 'sharedActivityMemberships'),
+      where('memberEmail', '==', userEmail),
+    );
+    const ownedActivitiesQuery = query(
+      collection(db, 'sharedActivities'),
+      where('ownerUid', '==', currentUser.uid),
+    );
+
+    const unsubscribeMemberships = onSnapshot(membershipsQuery, (snapshot) => {
+      memberActivityIds = new Set(snapshot.docs.map((membershipDoc) => membershipDoc.data().activityId).filter(Boolean));
+      syncRouteSubscriptions();
+      resolveInitialQuery();
       setLoadError('');
     }, (error) => {
-      setLoadError(getFirestoreErrorMessage(error, 'carregar os roteiros'));
-      setLoading(false);
+      setLoadError(getFirestoreErrorMessage(error, 'carregar os roteiros compartilhados'));
+      resolveInitialQuery();
     });
-  }, [userEmail]);
+    const unsubscribeOwned = onSnapshot(ownedActivitiesQuery, (snapshot) => {
+      ownedActivityIds = new Set(snapshot.docs.map((activityDoc) => activityDoc.id));
+      syncRouteSubscriptions();
+      resolveInitialQuery();
+      setLoadError('');
+    }, (error) => {
+      setLoadError(getFirestoreErrorMessage(error, 'carregar seus roteiros'));
+      resolveInitialQuery();
+    });
+
+    return () => {
+      unsubscribeMemberships();
+      unsubscribeOwned();
+      routeSubscriptions.forEach((unsubscribe) => unsubscribe());
+    };
+  }, [userEmail, currentUser?.uid]);
 
   useEffect(() => {
     if (!selectedId) {
@@ -141,7 +247,15 @@ export function SharedActivitiesView({ currentUser }) {
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
       };
-      await setDoc(activityRef, activityData);
+      const batch = writeBatch(db);
+      batch.set(activityRef, activityData);
+      activityData.memberEmails.forEach((email) => {
+        batch.set(doc(db, 'sharedActivityMemberships', membershipDocumentId(activityRef.id, email)), {
+          activityId: activityRef.id,
+          memberEmail: email,
+        });
+      });
+      await batch.commit();
       const createdAt = Math.floor(Date.now() / 1000);
       setActivities((currentActivities) => [
         { ...activityData, id: activityRef.id, createdAt: { seconds: createdAt }, updatedAt: { seconds: createdAt } },
@@ -170,10 +284,18 @@ export function SharedActivitiesView({ currentUser }) {
     }
     setBusy(true);
     try {
-      await updateDoc(doc(db, 'sharedActivities', selectedActivity.id), {
+      const batch = writeBatch(db);
+      batch.update(doc(db, 'sharedActivities', selectedActivity.id), {
         memberEmails: arrayUnion(email, normalizedEmail),
         updatedAt: serverTimestamp(),
       });
+      [...new Set([email, normalizedEmail])].forEach((memberEmail) => {
+        batch.set(doc(db, 'sharedActivityMemberships', membershipDocumentId(selectedActivity.id, memberEmail)), {
+          activityId: selectedActivity.id,
+          memberEmail,
+        });
+      });
+      await batch.commit();
       setInviteEmail('');
     } catch (error) {
       setLoadError(getFirestoreErrorMessage(error, 'adicionar a pessoa'));

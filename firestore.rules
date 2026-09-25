@@ -40,9 +40,7 @@ service cloud.firestore {
       }
 
       allow get: if isMember(resource.data);
-      allow list: if hasAuthenticatedEmail()
-        && resource.data.memberEmails is list
-        && resource.data.memberEmails.hasAny([request.auth.token.email]);
+      allow list: if isSignedIn() && resource.data.ownerUid == request.auth.uid;
       allow create: if hasAuthenticatedEmail()
         && request.resource.data.ownerUid == request.auth.uid
         && request.auth.token.email in request.resource.data.memberEmails
@@ -100,6 +98,40 @@ service cloud.firestore {
           ]);
         allow delete: if canAccessParent();
       }
+    }
+
+    match /sharedActivityMemberships/{membershipId} {
+      function parentPath(data) {
+        return /databases/$(database)/documents/sharedActivities/$(data.activityId);
+      }
+
+      function validMembership(data) {
+        return data.keys().hasOnly(['activityId', 'memberEmail'])
+          && data.activityId is string
+          && data.memberEmail is string
+          && data.memberEmail.size() > 0
+          && data.memberEmail.size() <= 320;
+      }
+
+      function canLinkMembership(data, parentData) {
+        return hasAuthenticatedEmail()
+          && parentData.memberEmails is list
+          && request.auth.token.email in parentData.memberEmails
+          && data.memberEmail in parentData.memberEmails;
+      }
+
+      allow get: if hasAuthenticatedEmail()
+        && (resource.data.memberEmail == request.auth.token.email
+          || request.auth.token.email in get(parentPath(resource.data)).data.memberEmails);
+      allow list: if hasAuthenticatedEmail()
+        && resource.data.memberEmail == request.auth.token.email;
+      allow create: if validMembership(request.resource.data)
+        && canLinkMembership(request.resource.data, getAfter(parentPath(request.resource.data)).data);
+      allow update: if validMembership(request.resource.data)
+        && request.resource.data.activityId == resource.data.activityId
+        && request.resource.data.memberEmail == resource.data.memberEmail
+        && canLinkMembership(request.resource.data, getAfter(parentPath(request.resource.data)).data);
+      allow delete: if false;
     }
 
     match /chats/{chatId} {
