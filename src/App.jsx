@@ -59,6 +59,7 @@ const loadSecondaryViews = () => import('./components/SecondaryViews');
 const GoogleCalendarSyncView = lazy(() => loadSecondaryViews().then(module => ({ default: module.GoogleCalendarSyncView })));
 const AISetupView = lazy(() => loadSecondaryViews().then(module => ({ default: module.AISetupView })));
 const ChatView = lazy(() => loadSecondaryViews().then(module => ({ default: module.ChatView })));
+const SharedActivitiesView = lazy(() => import('./components/SharedActivitiesView').then(module => ({ default: module.SharedActivitiesView })));
 const LocalAIAssistant = lazy(() => import('./components/LocalAIAssistant').then(module => ({ default: module.LocalAIAssistant })));
 
 // Mapas de Cores Pastéis Sólidas por Categoria (Sem bordas)
@@ -966,7 +967,7 @@ export default function App() {
   const [activeTab, setActiveTab] = useState(() => {
     if (typeof window !== 'undefined') {
       const hash = window.location.hash.replace('#', '');
-      if (['dashboard', 'calendar', 'google_calendar', 'tasks', 'habits', 'notes', 'pomodoro', 'chat', 'ai_setup', 'trash'].includes(hash)) {
+      if (['dashboard', 'calendar', 'google_calendar', 'tasks', 'shared', 'habits', 'notes', 'pomodoro', 'chat', 'ai_setup', 'trash'].includes(hash)) {
         return hash;
       }
     }
@@ -1630,6 +1631,7 @@ export default function App() {
     { id: 'dashboard', label: 'Painel Principal' },
     { id: 'calendar', label: 'Calendário Mensal' },
     { id: 'tasks', label: 'Tarefas', badge: tasks.filter(t => t.status !== 'concluido' && !t.deleted).length },
+    { id: 'shared', label: 'Compartilhadas' },
     { id: 'habits', label: 'Hábitos' },
     { id: 'notes', label: 'Notas' },
     { id: 'pomodoro', label: 'Foco (Pomodoro)' },
@@ -2114,6 +2116,7 @@ export default function App() {
                   />
                 )}
                 {activeTab === 'tasks' && <TasksView tasks={tasks} setTasks={setTasks} syncToFirestore={syncToFirestore} />}
+                {activeTab === 'shared' && <SharedActivitiesView currentUser={user} />}
                 {activeTab === 'habits' && <HabitsView habits={habits} setHabits={setHabits} syncToFirestore={syncToFirestore} />}
                 {activeTab === 'notes' && <NotesView notes={notes} setNotes={setNotes} syncToFirestore={syncToFirestore} />}
                 {activeTab === 'pomodoro' && <PomodoroView tasks={tasks} setTasks={setTasks} syncToFirestore={syncToFirestore} />}

@@ -24,6 +24,14 @@ O projeto utiliza React e Firebase e oferece, opcionalmente, o **Ajudante do Dia
 - Cores associadas às categorias.
 - Exclusão lógica com recuperação pela Lixeira.
 
+### Atividades compartilhadas
+
+- Criação de roteiros e outros planos em grupo.
+- Convites por e-mail; a pessoa acessa ao entrar em uma conta correspondente.
+- Inclusão, edição e remoção de etapas com data, horário, local e observações.
+- Atualização em tempo real para todos os participantes conectados.
+- Acesso restrito aos e-mails incluídos no roteiro pelas regras do Firestore.
+
 ### Hábitos
 
 - Frequência diária, em dias específicos ou em registro único.
