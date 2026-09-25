@@ -55,6 +55,7 @@ export function SharedActivitiesView({ currentUser }) {
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
+  const [successMessage, setSuccessMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);
   const [activityTitle, setActivityTitle] = useState('');
@@ -118,11 +119,20 @@ export function SharedActivitiesView({ currentUser }) {
 
   const createActivity = async (event) => {
     event.preventDefault();
-    if (!activityTitle.trim() || !currentUser?.uid || !userEmail) return;
+    if (!activityTitle.trim()) {
+      setLoadError('Informe o nome do roteiro para continuar.');
+      return;
+    }
+    if (!currentUser?.uid || !userEmail) {
+      setLoadError('Sua sessão não tem um e-mail válido. Saia e entre novamente na conta.');
+      return;
+    }
+    setLoadError('');
+    setSuccessMessage('');
     setBusy(true);
     const activityRef = doc(collection(db, 'sharedActivities'));
     try {
-      await setDoc(activityRef, {
+      const activityData = {
         title: activityTitle.trim(),
         destination: destination.trim(),
         ownerUid: currentUser.uid,
@@ -130,11 +140,18 @@ export function SharedActivitiesView({ currentUser }) {
         memberNames: { [normalizedUserEmail]: currentUser.displayName || userEmail },
         createdAt: serverTimestamp(),
         updatedAt: serverTimestamp(),
-      });
+      };
+      await setDoc(activityRef, activityData);
+      const createdAt = Math.floor(Date.now() / 1000);
+      setActivities((currentActivities) => [
+        { ...activityData, id: activityRef.id, createdAt: { seconds: createdAt }, updatedAt: { seconds: createdAt } },
+        ...currentActivities.filter((activity) => activity.id !== activityRef.id),
+      ]);
       setActivityTitle('');
       setDestination('');
       setShowCreateForm(false);
       setSelectedId(activityRef.id);
+      setSuccessMessage('Roteiro criado. Agora você pode adicionar atividades e convidar pessoas.');
     } catch (error) {
       setLoadError(getFirestoreErrorMessage(error, 'criar o roteiro'));
     } finally {
@@ -249,7 +266,8 @@ export function SharedActivitiesView({ currentUser }) {
         </button>
       </header>
 
-      {loadError && <div className="shared-error" role="status">{loadError}<button type="button" onClick={() => setLoadError('')} aria-label="Fechar aviso"><X size={15} /></button></div>}
+      {loadError && <div className="shared-error" role="alert">{loadError}<button type="button" onClick={() => setLoadError('')} aria-label="Fechar aviso"><X size={15} /></button></div>}
+      {successMessage && <div className="shared-success" role="status">{successMessage}<button type="button" onClick={() => setSuccessMessage('')} aria-label="Fechar aviso"><X size={15} /></button></div>}
 
       {showCreateForm && (
         <form className="shared-create-form" onSubmit={createActivity}>
