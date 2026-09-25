@@ -1,0 +1,153 @@
+.shared-preview-panel {
+  padding: 24px clamp(20px, 3vw, 32px);
+  color: #202825;
+  background: #fff;
+  border: 1px solid #e7e9e6;
+  border-radius: 8px;
+  box-shadow: 0 8px 30px rgb(0 0 0 / 4%);
+}
+
+.shared-preview-heading {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 16px;
+  border-bottom: 1px solid #eceeeb;
+}
+
+.shared-preview-heading h2 {
+  margin: 0;
+  color: #28332f;
+  font-size: clamp(16px, 2vw, 20px);
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.shared-preview-total {
+  flex: 0 0 auto;
+  padding: 6px 10px;
+  color: #376d64;
+  background: #edf3ef;
+  border-radius: 2px;
+  font-size: 11px;
+  font-weight: 600;
+}
+
+.shared-preview-list {
+  display: grid;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.shared-preview-list li {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+  padding: 13px 2px;
+  border-bottom: 1px solid #eceeeb;
+}
+
+.shared-preview-pin {
+  display: grid;
+  flex: 0 0 34px;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  color: #46766e;
+  background: #e8efea;
+}
+
+.shared-preview-copy {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  gap: 3px;
+}
+
+.shared-preview-copy strong {
+  overflow: hidden;
+  color: #26312d;
+  font-size: 13px;
+  font-weight: 650;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shared-preview-copy small {
+  overflow: hidden;
+  color: #737e78;
+  font-size: 11px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.shared-preview-members {
+  display: inline-flex;
+  flex: 0 0 auto;
+  align-items: center;
+  gap: 5px;
+  color: #63746d;
+  font-size: 11px;
+}
+
+.shared-preview-link {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-height: 38px;
+  margin-top: 13px;
+  padding: 0 11px;
+  color: #075d60;
+  background: transparent;
+  border: 1px solid #9cbab2;
+  border-radius: 2px;
+  font-size: 12px;
+  font-weight: 650;
+}
+
+.shared-preview-link:hover {
+  background: #edf3ef;
+}
+
+.shared-preview-link:focus-visible {
+  outline: 3px solid #9bc9c4;
+  outline-offset: 2px;
+}
+
+.shared-preview-empty {
+  padding-top: 14px;
+}
+
+.shared-preview-empty p,
+.shared-preview-state {
+  margin: 0;
+  color: #6d7973;
+  font-size: 12px;
+  line-height: 1.5;
+}
+
+.shared-preview-state {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 16px 0 4px;
+}
+
+.shared-preview-state.is-error {
+  color: #8a4138;
+}
+
+.shared-preview-spin {
+  animation: shared-preview-spin 0.9s linear infinite;
+}
+
+@keyframes shared-preview-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .shared-preview-spin { animation-duration: 2.5s; }
+}

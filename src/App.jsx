@@ -43,6 +43,7 @@ import {
 
 import { motion, AnimatePresence, useReducedMotion } from 'framer-motion';
 import { Toaster, toast } from 'sonner';
+import { SharedActivitiesPreview } from './components/SharedActivitiesPreview';
 import { applyConfirmedOrganizerAction, applyOrganizerUndo } from './services/ai/actionExecutor';
 import { syncCalendarActionWithGoogle } from './services/ai/calendarActionSync';
 import { frequencyFromHabit, organizerDateKey, toggleDailyHabitCompletion } from './services/ai/habitModel';
@@ -2088,6 +2089,7 @@ export default function App() {
               <Suspense fallback={<ViewLoading />}>
                 {activeTab === 'dashboard' && (
                   <DashboardView
+                    currentUser={user}
                     tasks={tasks}
                     setTasks={setTasks}
                     notes={notes}
@@ -2270,6 +2272,7 @@ function TaskNoteContent({ task, onToggle, onEdit, onDelete, completed = false, 
 }
 
 function DashboardView({ 
+  currentUser,
   tasks, 
   setTasks, 
   notes, 
@@ -2713,6 +2716,8 @@ function DashboardView({
           </button>
         </div>
       </div>
+
+      <SharedActivitiesPreview currentUser={currentUser} onOpen={() => setActiveTab('shared')} />
 
       {selectedNote && (
         <div className="note-viewer-overlay fixed inset-0 z-50 flex items-center justify-center p-5 sm:p-8">

@@ -106,32 +106,38 @@ service cloud.firestore {
       }
 
       function validMembership(data) {
-        return data.keys().hasOnly(['activityId', 'memberEmail'])
+        return data.keys().hasOnly(['activityId', 'memberEmail', 'ownerUid'])
           && data.activityId is string
           && data.memberEmail is string
           && data.memberEmail.size() > 0
-          && data.memberEmail.size() <= 320;
+          && data.memberEmail.size() <= 320
+          && data.ownerUid is string;
       }
 
       function canLinkMembership(data, parentData) {
         return hasAuthenticatedEmail()
           && parentData.memberEmails is list
+          && data.ownerUid == parentData.ownerUid
           && request.auth.token.email in parentData.memberEmails
           && data.memberEmail in parentData.memberEmails;
       }
 
       allow get: if hasAuthenticatedEmail()
         && (resource.data.memberEmail == request.auth.token.email
+          || resource.data.ownerUid == request.auth.uid
           || request.auth.token.email in get(parentPath(resource.data)).data.memberEmails);
       allow list: if hasAuthenticatedEmail()
-        && resource.data.memberEmail == request.auth.token.email;
+        && (resource.data.memberEmail == request.auth.token.email
+          || resource.data.ownerUid == request.auth.uid);
       allow create: if validMembership(request.resource.data)
         && canLinkMembership(request.resource.data, getAfter(parentPath(request.resource.data)).data);
       allow update: if validMembership(request.resource.data)
         && request.resource.data.activityId == resource.data.activityId
         && request.resource.data.memberEmail == resource.data.memberEmail
+        && (!('ownerUid' in resource.data)
+          || request.resource.data.ownerUid == resource.data.ownerUid)
         && canLinkMembership(request.resource.data, getAfter(parentPath(request.resource.data)).data);
-      allow delete: if false;
+      allow delete: if hasAuthenticatedEmail() && resource.data.ownerUid == request.auth.uid;
     }
 
     match /chats/{chatId} {

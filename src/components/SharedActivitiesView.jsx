@@ -4,6 +4,7 @@ import {
   deleteDoc,
   db,
   doc,
+  getDocs,
   onSnapshot,
   orderBy,
   query,
@@ -60,6 +61,7 @@ export function SharedActivitiesView({ currentUser }) {
   const [successMessage, setSuccessMessage] = useState('');
   const [busy, setBusy] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);
+  const [confirmingDelete, setConfirmingDelete] = useState(false);
   const [activityTitle, setActivityTitle] = useState('');
   const [destination, setDestination] = useState('');
   const [inviteEmail, setInviteEmail] = useState('');
@@ -108,6 +110,7 @@ export function SharedActivitiesView({ currentUser }) {
             batch.set(doc(db, 'sharedActivityMemberships', membershipDocumentId(activity.id, email)), {
               activityId: activity.id,
               memberEmail: email,
+              ownerUid: activity.ownerUid,
             });
           });
           await batch.commit();
@@ -253,6 +256,7 @@ export function SharedActivitiesView({ currentUser }) {
         batch.set(doc(db, 'sharedActivityMemberships', membershipDocumentId(activityRef.id, email)), {
           activityId: activityRef.id,
           memberEmail: email,
+          ownerUid: currentUser.uid,
         });
       });
       await batch.commit();
@@ -293,6 +297,7 @@ export function SharedActivitiesView({ currentUser }) {
         batch.set(doc(db, 'sharedActivityMemberships', membershipDocumentId(selectedActivity.id, memberEmail)), {
           activityId: selectedActivity.id,
           memberEmail,
+          ownerUid: selectedActivity.ownerUid,
         });
       });
       await batch.commit();
@@ -372,6 +377,57 @@ export function SharedActivitiesView({ currentUser }) {
     }
   };
 
+  const deleteActivity = async () => {
+    if (!selectedActivity || selectedActivity.ownerUid !== currentUser?.uid) return;
+    setLoadError('');
+    setBusy(true);
+    try {
+      const activityId = selectedActivity.id;
+      const memberEmails = [...new Set((selectedActivity.memberEmails || []).map((email) => String(email || '').trim()).filter(Boolean))];
+      for (let index = 0; index < memberEmails.length; index += 10) {
+        const membershipBatch = writeBatch(db);
+        memberEmails.slice(index, index + 10).forEach((memberEmail) => {
+          membershipBatch.set(doc(db, 'sharedActivityMemberships', membershipDocumentId(activityId, memberEmail)), {
+            activityId,
+            memberEmail,
+            ownerUid: selectedActivity.ownerUid,
+          });
+        });
+        await membershipBatch.commit();
+      }
+
+      const itemsSnapshot = await getDocs(collection(db, 'sharedActivities', activityId, 'items'));
+      const membershipsSnapshot = await getDocs(query(
+        collection(db, 'sharedActivityMemberships'),
+        where('activityId', '==', activityId),
+        where('ownerUid', '==', currentUser.uid),
+      ));
+
+      const deleteRefsInChunks = async (refs) => {
+        for (let index = 0; index < refs.length; index += 10) {
+          const batch = writeBatch(db);
+          refs.slice(index, index + 10).forEach((reference) => batch.delete(reference));
+          await batch.commit();
+        }
+      };
+
+      await deleteRefsInChunks(membershipsSnapshot.docs.map((membershipDoc) => membershipDoc.ref));
+      await deleteRefsInChunks(itemsSnapshot.docs.map((itemDoc) => itemDoc.ref));
+      await deleteDoc(doc(db, 'sharedActivities', activityId));
+
+      const remainingActivities = activities.filter((activity) => activity.id !== activityId);
+      setActivities(remainingActivities);
+      setSelectedId(remainingActivities[0]?.id || '');
+      setItems([]);
+      setConfirmingDelete(false);
+      setSuccessMessage('Roteiro apagado com todas as atividades e convites.');
+    } catch (error) {
+      setLoadError(getFirestoreErrorMessage(error, 'apagar o roteiro'));
+    } finally {
+      setBusy(false);
+    }
+  };
+
   if (!userEmail) return <div className="shared-message">Entre em uma conta com e-mail para acessar os roteiros compartilhados.</div>;
 
   return (
@@ -413,7 +469,7 @@ export function SharedActivitiesView({ currentUser }) {
           <aside className="shared-activity-list" aria-label="Seus roteiros compartilhados">
             <div className="shared-list-heading"><span>Seus roteiros</span><span>{activities.length}</span></div>
             {activities.map((activity) => (
-              <button type="button" key={activity.id} className={`shared-activity-choice ${selectedId === activity.id ? 'is-selected' : ''}`} onClick={() => setSelectedId(activity.id)}>
+              <button type="button" key={activity.id} className={`shared-activity-choice ${selectedId === activity.id ? 'is-selected' : ''}`} onClick={() => { setSelectedId(activity.id); setConfirmingDelete(false); }}>
                 <span className="shared-choice-icon"><MapPin size={16} /></span>
                 <span className="shared-choice-copy"><strong>{activity.title}</strong><small>{activity.destination || 'Sem destino definido'}</small></span>
                 <ChevronRight size={16} />
@@ -429,7 +485,24 @@ export function SharedActivitiesView({ currentUser }) {
                   <h2 id="shared-activity-title">{selectedActivity.title}</h2>
                   {selectedActivity.destination && <p><MapPin size={15} />{selectedActivity.destination}</p>}
                 </div>
-                <span className="shared-member-count"><UsersRound size={15} />{selectedMembers.length || 1} participantes</span>
+                <div className="shared-activity-controls">
+                  <span className="shared-member-count"><UsersRound size={15} />{selectedMembers.length || 1} participantes</span>
+                  {selectedActivity.ownerUid === currentUser?.uid && !confirmingDelete && (
+                    <button type="button" className="shared-delete-activity-button" onClick={() => setConfirmingDelete(true)}>
+                      <Trash2 size={15} />Apagar roteiro
+                    </button>
+                  )}
+                  {selectedActivity.ownerUid === currentUser?.uid && confirmingDelete && (
+                    <div className="shared-delete-confirm" role="group" aria-label="Confirmar exclusão do roteiro">
+                      <span>Apagar o roteiro e todas as atividades?</span>
+                      <button type="button" onClick={() => setConfirmingDelete(false)} disabled={busy}>Cancelar</button>
+                      <button type="button" className="shared-delete-confirm-action" onClick={deleteActivity} disabled={busy}>
+                        {busy ? <LoaderCircle className="shared-spin" size={14} /> : <Trash2 size={14} />}
+                        Apagar
+                      </button>
+                    </div>
+                  )}
+                </div>
               </header>
 
               <section className="shared-members" aria-label="Participantes">

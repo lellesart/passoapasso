@@ -29,6 +29,14 @@
 .shared-itinerary-header h2 { margin:9px 0 5px; color:#202825; font-size:27px; line-height:1.08; }
 .shared-itinerary-header p { display:flex; align-items:center; gap:5px; margin:0; color:#64716b; font-size:12px; }
 .shared-member-count { display:inline-flex; align-items:center; gap:6px; padding:7px 9px; color:#47615a; background:#edf2ef; font-size:11px; white-space:nowrap; }
+.shared-activity-controls { display:flex; align-items:flex-end; flex-direction:column; gap:9px; }
+.shared-delete-activity-button { display:inline-flex; align-items:center; justify-content:center; gap:6px; min-height:34px; padding:0 10px; color:#8a4138; background:transparent; border:1px solid #dfb6ad; border-radius:2px; font-size:11px; font-weight:600; white-space:nowrap; }
+.shared-delete-activity-button:hover { background:#fff3ef; }
+.shared-delete-confirm { display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:7px; max-width:440px; padding:9px; color:#753b34; background:#fff4ef; border:1px solid #ead0c5; font-size:11px; }
+.shared-delete-confirm > span { margin-right:auto; }
+.shared-delete-confirm button { display:inline-flex; align-items:center; justify-content:center; gap:5px; min-height:30px; padding:0 8px; color:#635a56; background:#fff; border:1px solid #d9d5d2; border-radius:2px; font-size:10px; font-weight:600; }
+.shared-delete-confirm .shared-delete-confirm-action { color:#fff; background:#9b4238; border-color:#9b4238; }
+.shared-delete-confirm button:disabled { opacity:.55; cursor:wait; }
 .shared-members,.shared-plan-section,.shared-add-item { padding:18px 22px; border-bottom:1px solid #e1e5e2; }
 .shared-section-title { display:flex; align-items:baseline; justify-content:space-between; gap:12px; margin-bottom:12px; }
 .shared-section-title h3 { margin:0; color:#25312d; font-family:"DM Sans",sans-serif; font-size:13px; font-weight:700; letter-spacing:0; }
@@ -92,6 +100,8 @@
 @media (max-width:480px) {
   .shared-page-heading h1 { font-size:31px; }
   .shared-itinerary-header { flex-direction:column; gap:11px; }
+  .shared-activity-controls { align-items:flex-start; width:100%; }
+  .shared-delete-confirm { justify-content:flex-start; }
   .shared-invite-form { align-items:stretch; flex-direction:column; }
   .shared-invite-form input { max-width:none; }
   .shared-invite-form button { min-height:38px; }
